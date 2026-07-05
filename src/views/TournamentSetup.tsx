@@ -224,7 +224,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
 
       {step === 1 ? (
         /* Step 1: Config Form */
-        <div style={styles.grid}>
+        <div className="setup-main-grid" style={styles.grid}>
           {/* Settings panel */}
           <div className="glass-panel" style={styles.panel}>
             <h3 style={styles.sectionTitle}><Settings size={18} color="var(--color-primary)" /> Datos Generales</h3>
@@ -234,7 +234,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
               <input type="text" className="form-input" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
 
-            <div style={styles.formRow}>
+            <div className="setup-form-grid" style={styles.formRow}>
               <div className="form-group">
                 <label className="form-label">Máx Jugadores por Mesa</label>
                 <select className="form-input" value={maxPlayersPerTable} onChange={(e) => setMaxPlayersPerTable(Number(e.target.value))}>
@@ -288,7 +288,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
 
             <div style={styles.cardSection}>
               <h4 style={styles.subHeading}>Entrada Inicial (Buy-In)</h4>
-              <div style={styles.formRow}>
+              <div className="setup-form-grid" style={styles.formRow}>
                 <div className="form-group">
                   <label className="form-label" style={styles.smallLabel}>Costo ($)</label>
                   <input type="number" className="form-input" value={buyInAmount} onChange={(e) => setBuyInAmount(Number(e.target.value))} />
@@ -302,7 +302,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
 
             <div style={styles.cardSection}>
               <h4 style={styles.subHeading}>Recompra (Rebuy)</h4>
-              <div style={styles.formRow}>
+              <div className="setup-form-grid" style={styles.formRow}>
                 <div className="form-group">
                   <label className="form-label" style={styles.smallLabel}>Costo ($)</label>
                   <input type="number" className="form-input" value={rebuyAmount} onChange={(e) => setRebuyAmount(Number(e.target.value))} />
@@ -316,7 +316,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
 
             <div style={styles.cardSection}>
               <h4 style={styles.subHeading}>Adición (Add-On)</h4>
-              <div style={styles.formRow}>
+              <div className="setup-form-grid" style={styles.formRow}>
                 <div className="form-group">
                   <label className="form-label" style={styles.smallLabel}>Costo ($)</label>
                   <input type="number" className="form-input" value={addonAmount} onChange={(e) => setAddonAmount(Number(e.target.value))} />
@@ -331,7 +331,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
         </div>
       ) : (
         /* Step 2: Players Selector & Seat Draw */
-        <div style={styles.grid}>
+        <div className="setup-main-grid" style={styles.grid}>
           {/* Registered Players List */}
           <div className="glass-panel" style={styles.panel}>
             <div style={styles.panelHeader}>

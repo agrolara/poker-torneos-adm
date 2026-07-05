@@ -78,7 +78,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div style={styles.appLayout}>
+    <div className="app-layout" style={styles.appLayout}>
       <Header currentView={view} onNavigate={handleNavigate} />
       
       <main style={styles.mainContent}>

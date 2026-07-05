@@ -255,7 +255,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   return (
     <div style={styles.container}>
       {/* Metrics Row */}
-      <div style={styles.metricsRow}>
+      <div className="dashboard-metrics-grid" style={styles.metricsRow}>
         <div className="glass-panel" style={styles.metricCard}>
           <div style={{ ...styles.iconWrapper, backgroundColor: 'var(--color-primary-glow)' }}>
             <Trophy size={24} color="var(--color-primary)" />
@@ -288,7 +288,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       </div>
 
       {/* Main Content Grid: Tournaments Left, Quick Actions Right */}
-      <div style={styles.contentGrid}>
+      <div className="dashboard-content-grid" style={styles.contentGrid}>
         {/* Tournaments List */}
         <div className="glass-panel" style={styles.listSection}>
           <div style={styles.sectionHeader}>

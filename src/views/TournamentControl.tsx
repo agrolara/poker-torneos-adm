@@ -587,14 +587,14 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       )}
 
       {/* Main Grid: Control clock on Left, Players grid on Right */}
-      <div style={styles.controlGrid}>
+      <div className="control-main-grid" style={styles.controlGrid}>
         {/* Left Side: Clock Card and Stats */}
         <div style={styles.leftColumn}>
           {/* Clock Display Card */}
           <div className="glass-panel" style={{ ...styles.clockCard, borderColor: isRunning ? 'var(--color-primary)' : 'var(--border-color)' }}>
             <div style={styles.levelHeader}>NIVEL {activeLevel?.level || 1}</div>
             
-            <div style={styles.timerDisplay}>
+            <div className="control-timer-display" style={styles.timerDisplay}>
               {formatTime(secondsRemaining)}
             </div>
 

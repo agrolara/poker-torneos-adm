@@ -214,7 +214,7 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
       </div>
 
       {isEditing ? (
-        <div style={styles.editorContainer}>
+        <div className="structures-editor-grid" style={styles.editorContainer}>
           {/* Left panel: Info and add levels */}
           <div className="glass-panel" style={styles.editorLeft}>
             <h3 style={styles.subTitle}>Parámetros de la Estructura</h3>
@@ -300,7 +300,7 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
             {levels.length === 0 ? (
               <div style={styles.emptyLevels}>No has añadido niveles de ciegas aún.</div>
             ) : (
-              <div style={styles.levelsTableContainer}>
+              <div className="table-responsive" style={styles.levelsTableContainer}>
                 <table style={styles.table}>
                   <thead>
                     <tr style={styles.tableHeaderRow}>
@@ -334,7 +334,7 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
           </div>
         </div>
       ) : (
-        <div style={styles.listGrid}>
+        <div className="structures-list-grid" style={styles.listGrid}>
           {/* Custom user structures */}
           <div className="glass-panel" style={styles.customSection}>
             <h3 style={styles.sectionHeading}>Tus Estructuras Guardadas</h3>

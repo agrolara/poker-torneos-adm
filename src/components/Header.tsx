@@ -11,7 +11,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
   const { user, profile, signOut } = useAuth();
 
   return (
-    <header className="glass-panel" style={styles.header}>
+    <header className="glass-panel app-header" style={styles.header}>
       {/* Brand logo */}
       <div style={styles.brand} onClick={() => onNavigate('dashboard')}>
         <Trophy size={24} color="var(--color-primary)" />
@@ -19,7 +19,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
       </div>
 
       {/* Nav Links */}
-      <nav style={styles.nav}>
+      <nav className="app-nav" style={styles.nav}>
         <button 
           style={{ ...styles.navLink, color: currentView === 'dashboard' ? 'var(--color-primary)' : 'var(--color-text-secondary)' }}
           onClick={() => onNavigate('dashboard')}
@@ -47,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
       </nav>
 
       {/* Right User info and signout */}
-      <div style={styles.userSection}>
+      <div className="app-user-section" style={styles.userSection}>
         <span style={styles.welcomeText}>
           {user?.email?.startsWith('liga-') ? (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>

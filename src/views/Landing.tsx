@@ -165,7 +165,7 @@ export const Landing: React.FC = () => {
       </header>
 
       {/* Main Grid: Left copy & showcase image, Right Features Showcase */}
-      <div style={styles.heroSection}>
+      <div className="landing-hero-grid" style={styles.heroSection}>
         <div style={styles.leftColumn}>
           <div style={styles.badge}>
             <Zap size={14} color="#f59e0b" />

@@ -312,7 +312,7 @@ export const Championships: React.FC<ChampionshipsProps> = ({ onNavigate }) => {
       {selectedChampionship && (
         <div style={styles.detailContainer}>
           {/* Top Info Bar */}
-          <div className="glass-panel" style={styles.infoBar}>
+          <div className="glass-panel championships-info-bar" style={styles.infoBar}>
             <div style={styles.infoMeta}>
               <span style={{ 
                 ...styles.statusBadge,
