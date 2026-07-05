@@ -41,6 +41,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         .from('league_codes')
         .select(`
           code,
+          client_name,
           created_at,
           used_by,
           profiles:used_by ( name )
@@ -55,6 +56,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   };
 
   const handleGenerateCode = async () => {
+    const clientName = prompt("Ingresa el nombre del cliente o liga para identificar este código (ej. Club de Póker Lara):");
+    if (clientName === null) return; // Cancelled
+
     setGeneratingCode(true);
     try {
       const code = 'LIGA-' + Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -62,6 +66,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         .from('league_codes')
         .insert({
           code,
+          client_name: clientName.trim() || 'Sin Nombre',
           created_by: user!.id
         });
 
@@ -328,9 +333,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 <thead>
                   <tr>
                     <th style={styles.th}>Código</th>
+                    <th style={styles.th}>Cliente / Identificador</th>
                     <th style={styles.th}>Creado el</th>
                     <th style={styles.th}>Estado</th>
-                    <th style={styles.th}>Cliente / Organizador</th>
+                    <th style={styles.th}>Registro Interno</th>
                     <th style={styles.th}>Acción</th>
                   </tr>
                 </thead>
@@ -338,6 +344,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                   {leagueCodes.map((item) => (
                     <tr key={item.code} style={styles.tr}>
                       <td style={styles.tdCode}>{item.code}</td>
+                      <td style={{ ...styles.td, fontWeight: 600 }}>{item.client_name || 'Sin Nombre'}</td>
                       <td style={styles.td}>{new Date(item.created_at).toLocaleDateString()}</td>
                       <td style={styles.td}>
                         <span style={{
