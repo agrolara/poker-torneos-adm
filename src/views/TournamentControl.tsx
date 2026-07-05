@@ -474,6 +474,39 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     }
   };
 
+  const handleRevertLog = async (log: TournamentLog) => {
+    const playerName = log.payload?.player_name;
+    if (!playerName && !log.payload?.message) return;
+
+    try {
+      if (log.event_type === 'elimination') {
+        // Find the eliminated player by name
+        const player = players.find(p => getPlayerName(p) === playerName && p.status === 'eliminated');
+        if (!player) { alert(`No se encontró al jugador eliminado "${playerName}".`); return; }
+        await handleRestorePlayer(player);
+      } else if (log.event_type === 'rebuy') {
+        const player = players.find(p => getPlayerName(p) === playerName);
+        if (!player) { alert(`No se encontró al jugador "${playerName}".`); return; }
+        if (player.rebuys_count <= 0) { alert('Este jugador no tiene recompras para revertir.'); return; }
+        await supabase.from('tournament_players').update({ rebuys_count: player.rebuys_count - 1 }).eq('id', player.id);
+        addLog('correction', { message: `Recompra #${log.payload.count} de ${playerName} revertida desde el historial` });
+        fetchTournamentData();
+      } else if (log.event_type === 'addon') {
+        const player = players.find(p => getPlayerName(p) === playerName);
+        if (!player) { alert(`No se encontró al jugador "${playerName}".`); return; }
+        if (!player.has_add_on) { alert('Este jugador ya no tiene add-on registrado.'); return; }
+        await supabase.from('tournament_players').update({ has_add_on: false }).eq('id', player.id);
+        addLog('correction', { message: `Add-On de ${playerName} revertido desde el historial` });
+        fetchTournamentData();
+      } else if (log.event_type === 'balancing') {
+        // Balancing logs contain a message like "Mesa balanceada: Se movió a PLAYER de Mesa X a Mesa Y (Silla Z)"
+        alert('Para revertir un balanceo, utiliza los selectores de Mesa/Silla en la vista de Lista para mover al jugador manualmente.');
+      }
+    } catch (e) {
+      console.error('Error reverting log:', e);
+    }
+  };
+
   const handleCompleteTournament = async (lastEliminatedId: string) => {
     // Find the winner (the last active player who wasn't eliminated)
     const activeList = players.filter(p => p.status === 'active' && p.id !== lastEliminatedId);
@@ -1243,6 +1276,16 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 {log.event_type === 'balancing' && log.payload.message}
                 {log.event_type === 'correction' && log.payload.message}
               </span>
+              {tournament.status !== 'completed' && ['elimination', 'rebuy', 'addon', 'balancing'].includes(log.event_type) && (
+                <button
+                  className="btn"
+                  style={styles.revertLogBtn}
+                  onClick={() => handleRevertLog(log)}
+                  title="Revertir esta acción"
+                >
+                  <RotateCcw size={11} /> Revertir
+                </button>
+              )}
             </div>
           ))}
           {logs.length === 0 && <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>No hay actividad registrada.</div>}
@@ -1532,6 +1575,22 @@ const styles: Record<string, React.CSSProperties> = {
   },
   logMessage: {
     color: 'var(--color-text-secondary)',
+    flex: 1,
+  },
+  revertLogBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '3px',
+    padding: '3px 8px',
+    fontSize: '0.7rem',
+    fontWeight: 700,
+    borderRadius: '4px',
+    background: 'rgba(99, 102, 241, 0.1)',
+    color: '#818cf8',
+    border: '1px solid rgba(99, 102, 241, 0.2)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   },
   actionsCard: {
     padding: '24px',
