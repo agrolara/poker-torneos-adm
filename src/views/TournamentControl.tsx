@@ -598,23 +598,124 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
 
     const diff = tableCounts[maxTable] - tableCounts[minTable];
 
-    // Check if tables should collapse
+    // Check if tables should merge
     const totalActive = active.length;
     const maxCapacity = tournament.max_players_per_table;
     const currentTableCount = tables.length;
     const neededTables = Math.ceil(totalActive / maxCapacity);
 
+    // Sort tables by count ascending to find the smallest
+    const sortedTables = [...tables].sort((a, b) => tableCounts[a] - tableCounts[b]);
+    const smallestTable = sortedTables[0];
+    const smallestCount = tableCounts[smallestTable];
+
     if (neededTables < currentTableCount) {
-      // Find the smallest table to break
-      let smallestTable = tables[0];
-      tables.forEach(t => {
-        if (tableCounts[t] < tableCounts[smallestTable]) smallestTable = t;
-      });
-      setBalancingAlert(`⚠️ Romper Mesa ${smallestTable}: Mover todos los jugadores a asientos libres.`);
+      // We can consolidate: the smallest table fits into others
+      const otherTables = sortedTables.slice(1);
+      const otherCapacity = otherTables.reduce((sum, t) => sum + (maxCapacity - tableCounts[t]), 0);
+      if (smallestCount <= otherCapacity) {
+        setBalancingAlert(`💥 Unir Mesas: Mesa ${smallestTable} tiene solo ${smallestCount} jugador${smallestCount === 1 ? '' : 'es'}. Se pueden redistribuir a las ${otherTables.length} mesa${otherTables.length === 1 ? '' : 's'} restante${otherTables.length === 1 ? '' : 's'}.`);
+      } else {
+        setBalancingAlert(`⚠️ Romper Mesa ${smallestTable}: Mover todos los jugadores a asientos libres.`);
+      }
+    } else if (smallestCount <= 3 && currentTableCount > 1) {
+      // Even if neededTables == currentTableCount, if a table has <= 3, suggest merge if possible
+      const otherTables = sortedTables.slice(1);
+      const otherCapacity = otherTables.reduce((sum, t) => sum + (maxCapacity - tableCounts[t]), 0);
+      if (smallestCount <= otherCapacity) {
+        setBalancingAlert(`💥 Unir Mesas: Mesa ${smallestTable} tiene solo ${smallestCount} jugador${smallestCount === 1 ? '' : 'es'}. Se pueden fusionar con las demás mesas.`);
+      } else if (diff >= 2) {
+        setBalancingAlert(`⚠️ Desbalance: Mover un jugador de Mesa ${maxTable} (${tableCounts[maxTable]} jug.) a Mesa ${minTable} (${tableCounts[minTable]} jug.).`);
+      } else {
+        setBalancingAlert(null);
+      }
     } else if (diff >= 2) {
       setBalancingAlert(`⚠️ Desbalance: Mover un jugador de Mesa ${maxTable} (${tableCounts[maxTable]} jug.) a Mesa ${minTable} (${tableCounts[minTable]} jug.).`);
     } else {
       setBalancingAlert(null);
+    }
+  };
+
+  const handleMergeTables = async () => {
+    try {
+      const active = players.filter(p => p.status === 'active');
+      const tableCounts: Record<number, number> = {};
+      active.forEach(p => {
+        if (p.table_number) tableCounts[p.table_number] = (tableCounts[p.table_number] || 0) + 1;
+      });
+
+      const tables = Object.keys(tableCounts).map(Number);
+      if (tables.length <= 1) return;
+
+      // Find the smallest table
+      const sortedTables = [...tables].sort((a, b) => tableCounts[a] - tableCounts[b]);
+      const tableToBreak = sortedTables[0];
+      const playersToMove = active.filter(p => p.table_number === tableToBreak);
+
+      if (playersToMove.length === 0) return;
+
+      // Distribute players to other tables, filling the one with fewest players first
+      const otherTables = sortedTables.slice(1);
+      const movedPlayers: string[] = [];
+
+      for (const player of playersToMove) {
+        // Recalculate counts after each move
+        const currentCounts: Record<number, number> = {};
+        // Count from already-moved state
+        active.forEach(p => {
+          if (p.table_number && p.table_number !== tableToBreak) {
+            currentCounts[p.table_number] = (currentCounts[p.table_number] || 0) + 1;
+          }
+        });
+        // Add already-moved players
+        movedPlayers.forEach(() => {}); // counts already reflect moves via DB
+
+        // Find the table with fewest players among other tables
+        let targetTable = otherTables[0];
+        let minCount = Infinity;
+        for (const t of otherTables) {
+          const count = currentCounts[t] || 0;
+          if (count < minCount && count < tournament.max_players_per_table) {
+            minCount = count;
+            targetTable = t;
+          }
+        }
+
+        // Find empty seat on target table
+        const seatsOnTarget = new Set(
+          active.filter(p => p.table_number === targetTable).map(p => p.seat_number)
+        );
+        // Add seats of players already moved to this target
+        let emptySeat = 1;
+        for (let s = 1; s <= tournament.max_players_per_table; s++) {
+          if (!seatsOnTarget.has(s)) { emptySeat = s; break; }
+        }
+
+        // Move player
+        const { error } = await supabase
+          .from('tournament_players')
+          .update({ table_number: targetTable, seat_number: emptySeat })
+          .eq('id', player.id);
+
+        if (error) throw error;
+
+        // Update local reference so next iteration knows this seat is taken
+        player.table_number = targetTable;
+        player.seat_number = emptySeat;
+        movedPlayers.push(player.id);
+        // Add seat to occupied set for next iteration
+        seatsOnTarget.add(emptySeat);
+        // Update count
+        tableCounts[targetTable] = (tableCounts[targetTable] || 0) + 1;
+      }
+
+      const names = playersToMove.map(p => getPlayerName(p)).join(', ');
+      addLog('balancing', { message: `Mesa ${tableToBreak} fusionada. ${playersToMove.length} jugador${playersToMove.length === 1 ? '' : 'es'} redistribuido${playersToMove.length === 1 ? '' : 's'}: ${names}` });
+      speakAnnounce(`Mesa ${tableToBreak} ha sido cerrada. ${playersToMove.length} jugadores fueron redistribuidos.`);
+
+      await fetchTournamentData();
+    } catch (e) {
+      console.error('Error merging tables:', e);
     }
   };
 
@@ -825,7 +926,16 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           <ShieldAlert size={20} color="var(--color-secondary)" />
           <span style={styles.balancingText}>{balancingAlert}</span>
           
-          <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {balancingAlert.includes('Unir Mesas') && (
+              <button 
+                className="btn" 
+                style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', background: '#dc2626', color: '#ffffff', border: 'none', borderRadius: '6px', fontWeight: 700 }} 
+                onClick={handleMergeTables}
+              >
+                Unir Mesas <Shuffle size={12} />
+              </button>
+            )}
             {balancingAlert.includes('Desbalance') && (
               <button 
                 className="btn btn-accent" 
