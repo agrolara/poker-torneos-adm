@@ -2,14 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import type { Tournament } from '../types';
-import { Play, Trophy, Users, Landmark, Plus, FileText, ChevronRight, UserPlus, Clock, Award } from 'lucide-react';
+import { Play, Trophy, Users, Landmark, Plus, FileText, ChevronRight, UserPlus, Clock, Award, Shield, Key, Trash } from 'lucide-react';
 
 interface DashboardProps {
   onNavigate: (view: string, data?: any) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [stats, setStats] = useState({
     totalTourneys: 0,
@@ -18,11 +18,79 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   });
   const [loading, setLoading] = useState(true);
 
+  // Super Admin state
+  const [leagueCodes, setLeagueCodes] = useState<any[]>([]);
+  const [generatingCode, setGeneratingCode] = useState(false);
+  const [deletingCode, setDeletingCode] = useState<string | null>(null);
+
   useEffect(() => {
     if (user) {
       fetchDashboardData();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (user && profile?.is_super_admin) {
+      fetchLeagueCodes();
+    }
+  }, [user, profile]);
+
+  const fetchLeagueCodes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('league_codes')
+        .select(`
+          code,
+          created_at,
+          used_by,
+          profiles:used_by ( name )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setLeagueCodes(data || []);
+    } catch (err) {
+      console.error('Error fetching league codes:', err);
+    }
+  };
+
+  const handleGenerateCode = async () => {
+    setGeneratingCode(true);
+    try {
+      const code = 'LIGA-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      const { error } = await supabase
+        .from('league_codes')
+        .insert({
+          code,
+          created_by: user!.id
+        });
+
+      if (error) throw error;
+      await fetchLeagueCodes();
+    } catch (err) {
+      console.error('Error generating league code:', err);
+    } finally {
+      setGeneratingCode(false);
+    }
+  };
+
+  const handleDeleteCode = async (codeToDelete: string) => {
+    if (!window.confirm(`¿Estás seguro de eliminar el código ${codeToDelete}?`)) return;
+    setDeletingCode(codeToDelete);
+    try {
+      const { error } = await supabase
+        .from('league_codes')
+        .delete()
+        .eq('code', codeToDelete);
+
+      if (error) throw error;
+      await fetchLeagueCodes();
+    } catch (err) {
+      console.error('Error deleting league code:', err);
+    } finally {
+      setDeletingCode(null);
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -226,6 +294,88 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           </div>
         </div>
       </div>
+
+      {/* Super Admin Section */}
+      {profile?.is_super_admin && (
+        <div className="glass-panel" style={styles.adminSection}>
+          <div style={styles.adminHeader}>
+            <div style={styles.adminTitleWrapper}>
+              <Shield size={22} color="#f59e0b" />
+              <h2 style={styles.adminTitle}>Panel de Super Administrador</h2>
+            </div>
+            <button 
+              className="btn btn-primary" 
+              style={styles.generateBtn}
+              onClick={handleGenerateCode}
+              disabled={generatingCode}
+            >
+              <Key size={16} style={{ marginRight: '6px' }} />
+              {generatingCode ? 'Generando...' : 'Crear Código de Liga'}
+            </button>
+          </div>
+          
+          <p style={styles.adminDesc}>
+            Genera códigos de invitación únicos y de un solo uso para tus clientes. Con estos códigos, tus clientes podrán registrar sus cuentas como organizadores.
+          </p>
+
+          <div style={styles.codesContainer}>
+            {leagueCodes.length === 0 ? (
+              <div style={styles.emptyAdminState}>
+                No se han generado códigos de liga todavía. Haz clic en "Crear Código de Liga".
+              </div>
+            ) : (
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Código</th>
+                    <th style={styles.th}>Creado el</th>
+                    <th style={styles.th}>Estado</th>
+                    <th style={styles.th}>Cliente / Organizador</th>
+                    <th style={styles.th}>Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leagueCodes.map((item) => (
+                    <tr key={item.code} style={styles.tr}>
+                      <td style={styles.tdCode}>{item.code}</td>
+                      <td style={styles.td}>{new Date(item.created_at).toLocaleDateString()}</td>
+                      <td style={styles.td}>
+                        <span style={{
+                          ...styles.adminBadge,
+                          backgroundColor: item.used_by ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                          color: item.used_by ? '#ef4444' : 'var(--color-primary)',
+                          border: item.used_by ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+                        }}>
+                          {item.used_by ? 'Utilizado' : 'Activo'}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        {item.used_by ? (
+                          <span style={styles.usedByUser}>
+                            👤 {item.profiles?.name || 'Organizador Registrado'}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--color-text-muted)' }}>Esperando cliente...</span>
+                        )}
+                      </td>
+                      <td style={styles.td}>
+                        <button
+                          className="btn btn-outline"
+                          style={styles.deleteBtn}
+                          onClick={() => handleDeleteCode(item.code)}
+                          disabled={deletingCode === item.code}
+                        >
+                          <Trash size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -411,5 +561,95 @@ const styles: Record<string, React.CSSProperties> = {
   linkSub: {
     fontSize: '0.75rem',
     color: 'var(--color-text-muted)',
+  },
+  adminSection: {
+    padding: '30px',
+    marginTop: '30px',
+    border: '1px solid rgba(245, 158, 11, 0.15)',
+  },
+  adminHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '16px',
+    flexWrap: 'wrap',
+    gap: '12px',
+  },
+  adminTitleWrapper: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  adminTitle: {
+    fontSize: '1.4rem',
+    fontWeight: 700,
+    color: '#ffffff',
+  },
+  generateBtn: {
+    background: 'linear-gradient(135deg, #c5a880 0%, #f59e0b 100%)',
+    color: '#000000',
+    fontWeight: 700,
+    border: 'none',
+  },
+  adminDesc: {
+    fontSize: '0.875rem',
+    color: 'var(--color-text-secondary)',
+    marginBottom: '24px',
+    lineHeight: 1.5,
+  },
+  codesContainer: {
+    overflowX: 'auto',
+  },
+  emptyAdminState: {
+    padding: '30px',
+    textAlign: 'center',
+    color: 'var(--color-text-muted)',
+    border: '1px dashed rgba(255,255,255,0.08)',
+    borderRadius: 'var(--radius-md)',
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    textAlign: 'left',
+  },
+  th: {
+    padding: '12px 16px',
+    color: 'var(--color-text-muted)',
+    fontSize: '0.8rem',
+    fontWeight: 650,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    borderBottom: '1px solid rgba(255,255,255,0.08)',
+  },
+  tr: {
+    borderBottom: '1px solid rgba(255,255,255,0.04)',
+  },
+  tdCode: {
+    padding: '16px',
+    fontSize: '1.05rem',
+    fontWeight: 700,
+    color: '#f59e0b',
+    letterSpacing: '0.05em',
+  },
+  td: {
+    padding: '16px',
+    fontSize: '0.9rem',
+    color: 'var(--color-text-secondary)',
+  },
+  adminBadge: {
+    padding: '4px 10px',
+    borderRadius: '100px',
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    display: 'inline-block',
+  },
+  usedByUser: {
+    fontWeight: 600,
+    color: 'var(--color-text-primary)',
+  },
+  deleteBtn: {
+    padding: '6px 10px',
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    color: '#ef4444',
   },
 };

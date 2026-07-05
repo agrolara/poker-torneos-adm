@@ -5,6 +5,7 @@ import { supabase, isConfigured } from '../supabaseClient';
 interface Profile {
   id: string;
   name: string | null;
+  is_super_admin: boolean | null;
   updated_at: string | null;
 }
 
@@ -13,7 +14,7 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string, name: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string, name: string, leagueCode: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
 }
 
@@ -88,7 +89,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error };
   };
 
-  const signUp = async (email: string, password: string, name: string) => {
+  const signUp = async (email: string, password: string, name: string, leagueCode: string) => {
+    // 1. Verify code first
+    if (!leagueCode || !leagueCode.trim()) {
+      return { error: new Error('Se requiere un código de liga válido para registrarse.') };
+    }
+
+    const { data: codeData, error: codeErr } = await supabase
+      .from('league_codes')
+      .select('*')
+      .eq('code', leagueCode.trim().toUpperCase())
+      .is('used_by', null)
+      .single();
+
+    if (codeErr || !codeData) {
+      return { error: new Error('El código de liga ingresado no es válido o ya fue utilizado.') };
+    }
+
     const { data: signUpData, error } = await supabase.auth.signUp({
       email,
       password,
@@ -100,12 +117,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (!error && signUpData?.user) {
-      // Create profile row manually if trigger is disabled or delayed
+      // Create profile row manually
       await supabase.from('profiles').upsert({
         id: signUpData.user.id,
         name: name,
+        is_super_admin: email === 'materiales.integrity@gmail.com',
         updated_at: new Date().toISOString(),
       });
+
+      // Claim the league code
+      await supabase
+        .from('league_codes')
+        .update({ used_by: signUpData.user.id })
+        .eq('code', leagueCode.trim().toUpperCase());
     }
 
     return { error };

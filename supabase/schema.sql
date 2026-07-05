@@ -5,6 +5,7 @@ create extension if not exists "uuid-ossp";
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade primary key,
   name text,
+  is_super_admin boolean default false,
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
@@ -25,9 +26,14 @@ create policy "Users can update their own profile" on public.profiles
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, name)
-  values (new.id, new.raw_user_meta_data->>'name')
-  on conflict (id) do nothing; -- Prevents errors if profile already exists
+  insert into public.profiles (id, name, is_super_admin)
+  values (
+    new.id, 
+    new.raw_user_meta_data->>'name',
+    (new.email = 'materiales.integrity@gmail.com')
+  )
+  on conflict (id) do update
+  set is_super_admin = (new.email = 'materiales.integrity@gmail.com');
   return new;
 end;
 $$ language plpgsql security definer;
@@ -147,3 +153,31 @@ create policy "Organizers can manage logs of their tournaments" on public.tourna
       and tournaments.organizer_id = auth.uid()
     )
   );
+
+-- Create League Codes Table if not exists
+create table if not exists public.league_codes (
+  code text primary key,
+  created_by uuid references public.profiles(id) on delete cascade not null,
+  used_by uuid references public.profiles(id) on delete set null,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+alter table public.league_codes enable row level security;
+
+drop policy if exists "Super admins can manage all codes" on public.league_codes;
+drop policy if exists "Anyone can check code validity" on public.league_codes;
+drop policy if exists "Registering users can claim code" on public.league_codes;
+
+create policy "Super admins can manage all codes" on public.league_codes
+  for all using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid() and profiles.is_super_admin = true
+    )
+  );
+
+create policy "Anyone can check code validity" on public.league_codes
+  for select using (true);
+
+create policy "Registering users can claim code" on public.league_codes
+  for update using (true) with check (used_by = auth.uid());
