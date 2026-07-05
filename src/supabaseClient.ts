@@ -8,3 +8,6 @@ export const isConfigured = !!(supabaseUrl && supabaseAnonKey && supabaseUrl !==
 export const supabase = isConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : (null as any);
+
+// Force rebuild trigger to update environment variables on Coolify
+
