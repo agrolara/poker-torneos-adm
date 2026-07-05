@@ -8,7 +8,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
-  const { profile, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
 
   return (
     <header className="glass-panel" style={styles.header}>
@@ -43,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
       {/* Right User info and signout */}
       <div style={styles.userSection}>
         <span style={styles.welcomeText}>
-          Organizador: <strong style={styles.orgName}>{profile?.name || 'Cargando...'}</strong>
+          Organizador: <strong style={styles.orgName}>{profile?.name || (user?.email === 'materiales.integrity@gmail.com' ? 'Mauricio Lara' : user?.email) || 'Cargando...'}</strong>
         </span>
         <button className="btn btn-outline" style={styles.logoutBtn} onClick={signOut} title="Cerrar Sesión">
           <LogOut size={16} />

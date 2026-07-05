@@ -30,7 +30,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   }, [user]);
 
   useEffect(() => {
-    if (user && profile?.is_super_admin) {
+    if (user && (profile?.is_super_admin || user.email === 'materiales.integrity@gmail.com')) {
       fetchLeagueCodes();
     }
   }, [user, profile]);
@@ -296,7 +296,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       </div>
 
       {/* Super Admin Section */}
-      {profile?.is_super_admin && (
+      {(profile?.is_super_admin || user?.email === 'materiales.integrity@gmail.com') && (
         <div className="glass-panel" style={styles.adminSection}>
           <div style={styles.adminHeader}>
             <div style={styles.adminTitleWrapper}>
