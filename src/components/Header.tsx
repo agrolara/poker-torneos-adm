@@ -14,7 +14,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
     <header className="glass-panel app-header" style={styles.header}>
       {/* Brand logo */}
       <div style={styles.brand} onClick={() => onNavigate('dashboard')}>
-        <img src="/logo.png" alt="Logo" style={{ height: '32px', width: 'auto', objectFit: 'contain' }} />
+        <img src="/logo1.png" alt="Logo" style={{ height: '32px', width: 'auto', objectFit: 'contain' }} />
         <span style={styles.logoText}>Poker Director</span>
       </div>
 

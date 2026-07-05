@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { Zap, Key, Eye, EyeOff, Shield, Tv, Users, Landmark, Award, ArrowRight } from 'lucide-react';
-import logoImg from '../assets/logo.png';
+import logoImg from '../assets/logo1.png';
 
 export const Landing: React.FC = () => {
   const { signIn, signUp } = useAuth();
