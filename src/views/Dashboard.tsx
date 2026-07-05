@@ -19,6 +19,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [loading, setLoading] = useState(true);
   const [dashboardTab, setDashboardTab] = useState<'championship' | 'standalone'>('championship');
 
+  // Active Championship Leaderboard States
+  const [activeChampionship, setActiveChampionship] = useState<any | null>(null);
+  const [champTournaments, setChampTournaments] = useState<any[]>([]);
+  const [champPlayers, setChampPlayers] = useState<any[]>([]);
+
   const championshipTournaments = tournaments.filter(t => t.championship_id !== null);
   const standaloneTournaments = tournaments.filter(t => t.championship_id === null);
   const activeTournamentsList = dashboardTab === 'championship' ? championshipTournaments : standaloneTournaments;
@@ -134,11 +139,113 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         totalPlayers: playersCount || 0,
         totalPrizePool: totalPaid,
       });
+
+      // Fetch active championship rankings
+      const { data: activeChampData } = await supabase
+        .from('championships')
+        .select('*')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      setActiveChampionship(activeChampData || null);
+
+      if (activeChampData) {
+        // Fetch tournaments of this championship
+        const { data: champTourneys } = await supabase
+          .from('tournaments')
+          .select('*')
+          .eq('championship_id', activeChampData.id);
+        
+        const completedIds = (champTourneys || [])
+          .filter(t => t.status === 'completed')
+          .map(t => t.id);
+
+        if (completedIds.length > 0) {
+          // Fetch players in these tournaments
+          const { data: playersData } = await supabase
+            .from('tournament_players')
+            .select(`
+              tournament_id,
+              player_id,
+              guest_name,
+              rebuys_count,
+              has_add_on,
+              elimination_position,
+              payout_amount,
+              player:player_id ( name )
+            `)
+            .in('tournament_id', completedIds);
+
+          setChampPlayers(playersData || [] as any);
+          setChampTournaments(champTourneys || []);
+        } else {
+          setChampPlayers([]);
+          setChampTournaments(champTourneys || []);
+        }
+      } else {
+        setChampPlayers([]);
+        setChampTournaments([]);
+      }
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const calculateDashboardLeaderboard = () => {
+    const standings: Record<string, {
+      name: string;
+      points: number;
+      played: number;
+      wins: number;
+    }> = {};
+
+    const completedTourneys = champTournaments.filter(t => t.status === 'completed');
+
+    completedTourneys.forEach(t => {
+      const playersInTourney = champPlayers.filter(tp => tp.tournament_id === t.id);
+      const N = playersInTourney.length;
+
+      playersInTourney.forEach(tp => {
+        const key = tp.player_id || `guest-${tp.guest_name}`;
+        const name = tp.player?.name || tp.guest_name || 'Invitado';
+
+        if (!standings[key]) {
+          standings[key] = {
+            name,
+            points: 0,
+            played: 0,
+            wins: 0
+          };
+        }
+
+        const entry = standings[key];
+        entry.played += 1;
+
+        let pts = 0;
+        const rank = tp.elimination_position;
+        if (rank) {
+          pts += (N - rank + 1) * 10;
+          if (rank === 1) {
+            pts += 50;
+            entry.wins += 1;
+          } else if (rank === 2) {
+            pts += 30;
+          } else if (rank === 3) {
+            pts += 20;
+          }
+        }
+        pts += (tp.rebuys_count || 0) * 2;
+        if (tp.has_add_on) pts += 3;
+
+        entry.points += pts;
+      });
+    });
+
+    return Object.values(standings).sort((a, b) => b.points - a.points).slice(0, 5); // top 5
   };
 
   if (loading) {
@@ -294,6 +401,89 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
         {/* Quick Links */}
         <div style={styles.sideColumn}>
+          {/* Active Championship Leaderboard Widget */}
+          <div className="glass-panel" style={{ ...styles.sideCard, marginBottom: '24px', borderColor: 'rgba(245, 158, 11, 0.15)' }}>
+            <h3 style={{ ...styles.sideCardTitle, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Trophy size={18} color="var(--color-primary)" />
+              {activeChampionship ? activeChampionship.name : 'Ranking de Liga'}
+            </h3>
+            
+            {!activeChampionship ? (
+              <div style={{ textAlign: 'center', padding: '16px 10px' }}>
+                <Award size={32} color="var(--color-text-muted)" style={{ marginBottom: '10px' }} />
+                <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', lineHeight: '1.4' }}>
+                  No tienes campeonatos activos para calcular rankings.
+                </p>
+                <button 
+                  className="btn btn-outline" 
+                  style={{ marginTop: '12px', width: '100%', fontSize: '0.8rem', padding: '6px 0' }}
+                  onClick={() => onNavigate('championships')}
+                >
+                  Crear Campeonato
+                </button>
+              </div>
+            ) : calculateDashboardLeaderboard().length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '16px 10px' }}>
+                <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', lineHeight: '1.4' }}>
+                  Aún no hay fechas completadas en este campeonato.
+                </p>
+                <button 
+                  className="btn btn-primary" 
+                  style={{ marginTop: '12px', width: '100%', fontSize: '0.8rem', padding: '6px 0' }}
+                  onClick={() => onNavigate('setup')}
+                >
+                  Programar Primera Fecha
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+                {calculateDashboardLeaderboard().map((player, idx) => (
+                  <div key={idx} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    background: idx === 0 ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255,255,255,0.02)',
+                    border: idx === 0 ? '1px solid rgba(245, 158, 11, 0.2)' : '1px solid rgba(255,255,255,0.03)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 
+                          idx === 0 ? '#f59e0b' : 
+                          idx === 1 ? '#94a3b8' : 
+                          idx === 2 ? '#b45309' : 'rgba(255,255,255,0.05)',
+                        color: idx <= 2 ? '#000000' : '#ffffff'
+                      }}>
+                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
+                      </span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 650 }}>{player.name}</span>
+                    </div>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                      {player.points} pts
+                    </span>
+                  </div>
+                ))}
+                
+                <button 
+                  className="btn btn-outline" 
+                  style={{ width: '100%', marginTop: '8px', padding: '6px 0', fontSize: '0.8rem' }}
+                  onClick={() => onNavigate('championships')}
+                >
+                  Ver Clasificación Completa
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="glass-panel" style={styles.sideCard}>
             <h3 style={styles.sideCardTitle}>Administración</h3>
             <p style={styles.sideCardDesc}>Configura la base de jugadores locales y estructuras de tiempo preestablecidas.</p>
