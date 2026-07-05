@@ -860,7 +860,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                       {/* Felt shape */}
                       <div style={styles.tableFelt}>
                         <div style={styles.feltCenter}>
-                          <span style={styles.feltLabel}>Poker Director</span>
+                          <span style={styles.feltLabel}>{tournament.name}</span>
                           <span style={styles.feltSub}>Mesa {tableNum}</span>
                         </div>
                       </div>
