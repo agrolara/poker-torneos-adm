@@ -49,7 +49,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         .select('payout_amount');
 
       if (payoutError) throw payoutError;
-      const totalPaid = payoutData?.reduce((acc, p) => acc + Number(p.payout_amount || 0), 0) || 0;
+      const totalPaid = payoutData?.reduce((acc: number, p: any) => acc + Number(p.payout_amount || 0), 0) || 0;
 
       setStats({
         totalTourneys: tourneysData?.length || 0,
