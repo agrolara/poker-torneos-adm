@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../supabaseClient';
 import { Zap, Key, Eye, EyeOff, Shield, Tv, Users, Landmark, Award, ArrowRight, LogIn } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import landingImg from '../assets/landing.png';
@@ -28,25 +27,32 @@ export const Landing: React.FC = () => {
   const [loginLoading, setLoginLoading] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
 
-  // Google OAuth for Super Admin
-  const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
+  // Super Admin modal states
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState('');
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
+
+  // Super Admin Login handler
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminError('');
+    setAdminLoading(true);
+
     try {
-      const { error: err } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
-      });
+      const { error: err } = await signIn(adminEmail, adminPassword);
       if (err) {
-        alert('Error al iniciar sesión con Google: ' + err.message);
+        setAdminError(err.message || 'Credenciales incorrectas.');
+      } else {
+        setShowAdminModal(false);
       }
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      setAdminError('Ocurrió un error inesperado');
     } finally {
-      setGoogleLoading(false);
+      setAdminLoading(false);
     }
   };
 
@@ -128,11 +134,15 @@ export const Landing: React.FC = () => {
           <button 
             className="btn btn-outline" 
             style={styles.adminBtn}
-            onClick={handleGoogleSignIn}
-            disabled={googleLoading}
+            onClick={() => {
+              setAdminEmail('');
+              setAdminPassword('');
+              setAdminError('');
+              setShowAdminModal(true);
+            }}
           >
             <Shield size={15} style={{ marginRight: '6px', color: '#f59e0b' }} />
-            {googleLoading ? 'Cargando...' : 'Acceso Super Admin'}
+            Acceso Super Admin
           </button>
 
           <button 
@@ -423,6 +433,77 @@ export const Landing: React.FC = () => {
                 </button>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Super Admin Login Modal */}
+      {showAdminModal && (
+        <div style={styles.modalOverlay}>
+          <div className="glass-panel" style={styles.modalContent}>
+            <button 
+              type="button" 
+              onClick={() => {
+                setShowAdminModal(false);
+                setAdminError('');
+              }}
+              style={styles.modalCloseX}
+            >
+              &times;
+            </button>
+
+            <form onSubmit={handleAdminLogin} style={styles.modalForm}>
+              <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                <Shield size={40} color="#f59e0b" />
+              </div>
+              <h3 style={{ ...styles.modalTitle, textAlign: 'center' }}>Acceso Super Admin</h3>
+              <p style={{ ...styles.modalSubtitle, textAlign: 'center' }}>Ingresa tus credenciales de administrador para gestionar la plataforma.</p>
+              
+              {adminError && <div style={styles.errorAlert}>{adminError}</div>}
+              
+              <div className="form-group">
+                <label className="form-label">Correo Electrónico</label>
+                <input
+                  type="email"
+                  className="form-input"
+                  placeholder="admin@correo.com"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Contraseña</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showAdminPassword ? 'text' : 'password'}
+                    className="form-input"
+                    placeholder="••••••••"
+                    style={{ paddingRight: '40px' }}
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    required
+                  />
+                  <button 
+                    type="button" 
+                    onClick={() => setShowAdminPassword(!showAdminPassword)}
+                    style={styles.passwordToggle}
+                  >
+                    {showAdminPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                className="btn btn-primary" 
+                style={{ ...styles.submitBtn, background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' }}
+                disabled={adminLoading}
+              >
+                {adminLoading ? 'Ingresando...' : 'Ingresar como Administrador'}
+              </button>
+            </form>
           </div>
         </div>
       )}
