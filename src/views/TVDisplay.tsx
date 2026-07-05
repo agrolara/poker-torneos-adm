@@ -26,6 +26,7 @@ export const TVDisplay: React.FC = () => {
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const lastAnnouncedLevelRef = useRef<number>(-1);
+  const lastWarnedMinuteLevelRef = useRef<number>(-1);
 
   const stateRef = useRef<TVState | null>(null);
   const voiceEnabledRef = useRef(false);
@@ -37,6 +38,31 @@ export const TVDisplay: React.FC = () => {
   useEffect(() => {
     voiceEnabledRef.current = voiceEnabled;
   }, [voiceEnabled]);
+
+  // Monitor when localSeconds hits 60 to play warning in TVDisplay
+  useEffect(() => {
+    if (state && state.is_timer_running && localSeconds === 60) {
+      if (lastWarnedMinuteLevelRef.current !== state.current_level_index) {
+        if (voiceEnabled) {
+          speakAnnounce("¡Último minuto de nivel!");
+        } else {
+          try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.5);
+          } catch (e) {}
+        }
+        lastWarnedMinuteLevelRef.current = state.current_level_index;
+      }
+    }
+  }, [localSeconds, state, voiceEnabled]);
 
   const playAlarmSound = () => {
     try {

@@ -25,6 +25,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+  const lastWarnedMinuteLevelRef = useRef<number>(-1);
 
   useEffect(() => {
     // Initialize Sync channel
@@ -71,12 +72,17 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     };
   }, [isRunning]);
 
-  // Monitor when secondsRemaining hits 0 to trigger level up sequentially
+  // Monitor when secondsRemaining hits 0 or 60 to trigger level up or warning
   useEffect(() => {
-    if (isRunning && secondsRemaining === 0) {
-      handleLevelUp();
+    if (isRunning) {
+      if (secondsRemaining === 0) {
+        handleLevelUp();
+      } else if (secondsRemaining === 60 && lastWarnedMinuteLevelRef.current !== currentLevelIdx) {
+        speakAnnounce("¡Último minuto de nivel!");
+        lastWarnedMinuteLevelRef.current = currentLevelIdx;
+      }
     }
-  }, [secondsRemaining, isRunning]);
+  }, [secondsRemaining, isRunning, currentLevelIdx]);
 
   // Periodic database save (every 10 seconds)
   useEffect(() => {
