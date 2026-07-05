@@ -230,6 +230,39 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
               />
             </div>
 
+            <div className="form-group">
+              <label className="form-label">Tiempo por Nivel (Minutos)</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="number"
+                  className="form-input"
+                  placeholder="15"
+                  value={duration}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setDuration(val);
+                    // Actualizar todos los niveles existentes automáticamente al cambiar este valor
+                    setLevels(prev => prev.map(lvl => ({ ...lvl, duration: val })));
+                  }}
+                  min="1"
+                />
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', padding: '0 12px' }}
+                  onClick={() => {
+                    setLevels(prev => prev.map(lvl => ({ ...lvl, duration: Number(duration) })));
+                  }}
+                  title="Aplica la duración actual a todos los niveles de la tabla"
+                >
+                  Aplicar a todos
+                </button>
+              </div>
+              <small style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
+                Al cambiar esto, se actualizará el tiempo de todos los niveles en la tabla de la derecha.
+              </small>
+            </div>
+
             <div style={styles.addLevelBlock}>
               <h4 style={styles.levelBlockTitle}>Añadir Siguiente Nivel</h4>
               <div style={styles.addLevelGrid}>
@@ -325,6 +358,9 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
                         setEditingId(s.id);
                         setStructureName(s.name);
                         setLevels(s.levels);
+                        if (s.levels && s.levels.length > 0) {
+                          setDuration(s.levels[0].duration);
+                        }
                         setIsEditing(true);
                       }}>
                         <Edit2 size={16} />
@@ -353,6 +389,9 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
                     setEditingId(null);
                     setStructureName(`Copia de ${preset.name}`);
                     setLevels(preset.levels);
+                    if (preset.levels && preset.levels.length > 0) {
+                      setDuration(preset.levels[0].duration);
+                    }
                     setIsEditing(true);
                   }}>
                     Copiar y Editar <Plus size={14} />
