@@ -51,7 +51,6 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       timerRef.current = setInterval(() => {
         setSecondsRemaining(prev => {
           if (prev <= 1) {
-            handleLevelUp();
             return 0;
           }
           const nextSec = prev - 1;
@@ -70,7 +69,14 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isRunning, currentLevelIdx]);
+  }, [isRunning]);
+
+  // Monitor when secondsRemaining hits 0 to trigger level up sequentially
+  useEffect(() => {
+    if (isRunning && secondsRemaining === 0) {
+      handleLevelUp();
+    }
+  }, [secondsRemaining, isRunning]);
 
   // Periodic database save (every 10 seconds)
   useEffect(() => {
@@ -110,17 +116,25 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       
       setPlayers(pData || []);
 
-      // Fetch blind structure (needs joining or fetching structure ID from tournament settings)
-      // For this SaaS, we fetch structures
-      const { data: structures } = await supabase
-        .from('blind_structures')
-        .select('*');
-      
-
-      
-      // Actually we have the list, let's fetch the first one as fallback, or use a default Turbo preset if empty
-      if (structures && structures.length > 0) {
-        setStructure(structures[0]); // fallback
+      // Fetch the specific blind structure of the tournament
+      if (tData && tData.structure_id) {
+        const { data: sData } = await supabase
+          .from('blind_structures')
+          .select('*')
+          .eq('id', tData.structure_id)
+          .single();
+        if (sData) {
+          setStructure(sData);
+        }
+      } else {
+        // Fallback to the first available structure if not set
+        const { data: structures } = await supabase
+          .from('blind_structures')
+          .select('*')
+          .limit(1);
+        if (structures && structures.length > 0) {
+          setStructure(structures[0]);
+        }
       }
 
       // Fetch logs
@@ -245,10 +259,37 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     });
   };
 
+  const playAlarmSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const playBeep = (startTime: number, frequency: number, duration: number) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(frequency, startTime);
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.5, startTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+      };
+      const now = audioCtx.currentTime;
+      playBeep(now, 587.33, 0.4); // D5
+      playBeep(now + 0.5, 587.33, 0.4);
+      playBeep(now + 1.0, 880.00, 0.8); // A5
+    } catch (e) {
+      console.error('Failed to play audio:', e);
+    }
+  };
+
   const speakAnnounce = (txt: string) => {
+    playAlarmSound();
     if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(txt);
-      utterance.lang = 'es-MX'; // Mexican Spanish voice
+      utterance.lang = 'es-MX';
       utterance.rate = 0.95;
       window.speechSynthesis.speak(utterance);
     }
@@ -462,6 +503,40 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     return Math.round(totalChips / activeCount);
   };
 
+  const handleManualCompleteTournament = async () => {
+    if (!window.confirm('¿Estás seguro de que deseas finalizar este torneo manualmente?')) return;
+    try {
+      setIsRunning(false);
+      await supabase
+        .from('tournaments')
+        .update({ 
+          status: 'completed', 
+          is_timer_running: false 
+        })
+        .eq('id', tournament.id);
+      
+      addLog('timer_action', { message: 'Torneo finalizado manualmente por el organizador.' });
+      onBack();
+    } catch (err) {
+      console.error('Error completing tournament:', err);
+    }
+  };
+
+  const handleDeleteTournament = async () => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este torneo por completo? Esta acción no se puede deshacer.')) return;
+    try {
+      setIsRunning(false);
+      await supabase
+        .from('tournaments')
+        .delete()
+        .eq('id', tournament.id);
+      
+      onBack();
+    } catch (err) {
+      console.error('Error deleting tournament:', err);
+    }
+  };
+
   const formatTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
     const remainingSecs = secs % 60;
@@ -572,6 +647,29 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                   <span style={styles.payoutVal}>${amount.toLocaleString()}</span>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Actions Card */}
+          <div className="glass-panel" style={styles.actionsCard}>
+            <h4 style={styles.actionsTitle}>Acciones del Torneo</h4>
+            <div style={styles.actionsButtons}>
+              {tournament.status !== 'completed' && (
+                <button 
+                  className="btn btn-warning" 
+                  style={styles.finishBtn}
+                  onClick={handleManualCompleteTournament}
+                >
+                  Finalizar Torneo
+                </button>
+              )}
+              <button 
+                className="btn btn-danger" 
+                style={styles.deleteBtn}
+                onClick={handleDeleteTournament}
+              >
+                Eliminar Torneo
+              </button>
             </div>
           </div>
         </div>
@@ -983,5 +1081,45 @@ const styles: Record<string, React.CSSProperties> = {
   },
   logMessage: {
     color: 'var(--color-text-secondary)',
+  },
+  actionsCard: {
+    padding: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    marginTop: '16px',
+    borderColor: 'rgba(239, 68, 68, 0.1)',
+  },
+  actionsTitle: {
+    fontSize: '0.9rem',
+    fontWeight: 750,
+    color: 'var(--color-text-secondary)',
+    textTransform: 'uppercase',
+    margin: 0,
+  },
+  actionsButtons: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+  finishBtn: {
+    width: '100%',
+    padding: '12px',
+    fontWeight: 700,
+    borderRadius: '8px',
+    cursor: 'pointer',
+    backgroundColor: '#d97706',
+    borderColor: '#d97706',
+    color: '#ffffff',
+  },
+  deleteBtn: {
+    width: '100%',
+    padding: '12px',
+    fontWeight: 700,
+    borderRadius: '8px',
+    cursor: 'pointer',
+    backgroundColor: '#dc2626',
+    borderColor: '#dc2626',
+    color: '#ffffff',
   },
 };

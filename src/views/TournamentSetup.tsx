@@ -139,6 +139,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
           is_timer_running: false,
           max_players_per_table: Number(maxPlayersPerTable),
           payout_structure: payoutStructure,
+          structure_id: selectedStructureId || null,
         })
         .select()
         .single();

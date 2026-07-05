@@ -27,20 +27,72 @@ export const TVDisplay: React.FC = () => {
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const lastAnnouncedLevelRef = useRef<number>(-1);
 
+  const stateRef = useRef<TVState | null>(null);
+  const voiceEnabledRef = useRef(false);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    voiceEnabledRef.current = voiceEnabled;
+  }, [voiceEnabled]);
+
+  const playAlarmSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const playBeep = (startTime: number, frequency: number, duration: number) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(frequency, startTime);
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.5, startTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+      };
+      const now = audioCtx.currentTime;
+      playBeep(now, 587.33, 0.4); // D5
+      playBeep(now + 0.5, 587.33, 0.4);
+      playBeep(now + 1.0, 880.00, 0.8); // A5
+    } catch (e) {
+      console.error('Failed to play audio:', e);
+    }
+  };
+
+  const speakAnnounce = (txt: string) => {
+    playAlarmSound();
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(txt);
+      utterance.lang = 'es-MX';
+      utterance.rate = 0.95;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
   useEffect(() => {
     // Connect to BroadcastChannel
-    broadcastChannelRef.current = new BroadcastChannel('poker_tournament_sync');
+    const channel = new BroadcastChannel('poker_tournament_sync');
+    broadcastChannelRef.current = channel;
 
-    broadcastChannelRef.current.onmessage = (event) => {
+    channel.onmessage = (event) => {
       const { type, payload } = event.data;
       if (type === 'STATE_UPDATE') {
         setState(payload);
         setLocalSeconds(payload.seconds_remaining);
         
         // Voice announcement if level changed
-        if (voiceEnabled && payload.current_level_index !== lastAnnouncedLevelRef.current) {
+        if (payload.current_level_index !== lastAnnouncedLevelRef.current) {
           if (lastAnnouncedLevelRef.current !== -1) {
-            speakAnnounce(`¡Atención! Ciegas suben. Nivel nuevo. Ciegas: ${payload.small_blind} y ${payload.big_blind}. Ante de ${payload.ante || 0}`);
+            if (voiceEnabledRef.current) {
+              speakAnnounce(`¡Atención! Ciegas suben. Nivel nuevo. Ciegas: ${payload.small_blind} y ${payload.big_blind}. Ante de ${payload.ante || 0}`);
+            } else {
+              playAlarmSound();
+            }
           }
           lastAnnouncedLevelRef.current = payload.current_level_index;
         }
@@ -50,11 +102,12 @@ export const TVDisplay: React.FC = () => {
     };
 
     // Request state from organizer window upon opening
-    broadcastChannelRef.current.postMessage({ type: 'REQUEST_STATE' });
+    channel.postMessage({ type: 'REQUEST_STATE' });
 
     // Local tick interpolation for smooth clock transitions
     const interval = setInterval(() => {
-      if (state && state.is_timer_running) {
+      const currentState = stateRef.current;
+      if (currentState && currentState.is_timer_running) {
         setLocalSeconds(prev => {
           if (prev <= 1) {
             return 0;
@@ -66,18 +119,9 @@ export const TVDisplay: React.FC = () => {
 
     return () => {
       clearInterval(interval);
-      if (broadcastChannelRef.current) broadcastChannelRef.current.close();
+      channel.close();
     };
-  }, [state, voiceEnabled]);
-
-  const speakAnnounce = (txt: string) => {
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(txt);
-      utterance.lang = 'es-MX';
-      utterance.rate = 0.95;
-      window.speechSynthesis.speak(utterance);
-    }
-  };
+  }, []);
 
   const formatTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
