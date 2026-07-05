@@ -120,6 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Create profile row manually
       await supabase.from('profiles').upsert({
         id: signUpData.user.id,
+        user_id: signUpData.user.id,
         name: name,
         is_super_admin: email === 'materiales.integrity@gmail.com',
         updated_at: new Date().toISOString(),

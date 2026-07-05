@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Zap, Key, Eye, EyeOff, Shield, Tv, Users, Landmark, Award, ArrowRight, LogIn } from 'lucide-react';
+import { supabase } from '../supabaseClient';
+import { Zap, Key, Eye, EyeOff, Shield, Tv, Users, Landmark, Award, ArrowRight } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import landingImg from '../assets/landing.png';
 
@@ -9,24 +10,12 @@ export const Landing: React.FC = () => {
   
   // Modal states for "Acceso a tu liga"
   const [showLeagueModal, setShowLeagueModal] = useState(false);
-  const [modalTab, setModalTab] = useState<'code' | 'login'>('code'); // 'code' for Register, 'login' for Login
   
-  // Registration form states
-  const [regName, setRegName] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regPassword, setRegPassword] = useState('');
-  const [regCode, setRegCode] = useState('');
-  const [regError, setRegError] = useState('');
-  const [regSuccess, setRegSuccess] = useState('');
-  const [regLoading, setRegLoading] = useState(false);
-
-  // Login form states
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
-
-  const [showPassword, setShowPassword] = useState(false);
+  // Code entry states
+  const [leagueCode, setLeagueCode] = useState('');
+  const [leagueError, setLeagueError] = useState('');
+  const [leagueSuccess, setLeagueSuccess] = useState('');
+  const [leagueLoading, setLeagueLoading] = useState(false);
 
   // Super Admin modal states
   const [showAdminModal, setShowAdminModal] = useState(false);
@@ -56,59 +45,64 @@ export const Landing: React.FC = () => {
     }
   };
 
-  // Handle Client Registration with code
-  const handleRegisterWithCode = async (e: React.FormEvent) => {
+  // Handle Client access transparently by league code
+  const handleLeagueAccess = async (e: React.FormEvent) => {
     e.preventDefault();
-    setRegError('');
-    setRegSuccess('');
-    setRegLoading(true);
+    setLeagueError('');
+    setLeagueSuccess('');
+    setLeagueLoading(true);
 
-    if (!regName.trim()) {
-      setRegError('El nombre del organizador es requerido');
-      setRegLoading(false);
-      return;
-    }
-    if (!regCode.trim()) {
-      setRegError('Se requiere un Código de Liga válido.');
-      setRegLoading(false);
+    const cleanCode = leagueCode.trim().toUpperCase();
+    if (!cleanCode) {
+      setLeagueError('El código de liga es requerido.');
+      setLeagueLoading(false);
       return;
     }
 
     try {
-      const { error: err } = await signUp(regEmail, regPassword, regName, regCode);
-      if (err) {
-        setRegError(err.message || 'Error al registrarse. Revisa tu código o datos.');
+      // 1. Verify if code is valid in league_codes table
+      const { data: codeData, error: codeErr } = await supabase
+        .from('league_codes')
+        .select('*')
+        .eq('code', cleanCode)
+        .single();
+
+      if (codeErr || !codeData) {
+        setLeagueError('El código de liga ingresado no es válido o no existe.');
+        setLeagueLoading(false);
+        return;
+      }
+
+      // Generate deterministic credentials based on league code
+      const email = `liga-${cleanCode.toLowerCase()}@poker.com`;
+      const password = `pwd-${cleanCode.toLowerCase()}-poker`;
+      const name = `Liga ${cleanCode}`;
+
+      if (!codeData.used_by) {
+        // Activate code (first time use - signs up and registers profile/claims code)
+        const { error: signUpError } = await signUp(email, password, name, cleanCode);
+        if (signUpError) {
+          setLeagueError('Error al activar la liga: ' + signUpError.message);
+        } else {
+          setLeagueSuccess('¡Liga activada con éxito! Redirigiendo...');
+          setTimeout(() => {
+            setShowLeagueModal(false);
+            setLeagueSuccess('');
+          }, 1500);
+        }
       } else {
-        setRegSuccess('¡Cuenta de organizador creada con éxito! Redirigiendo...');
-        setTimeout(() => {
+        // Login directly (already activated)
+        const { error: signInError } = await signIn(email, password);
+        if (signInError) {
+          setLeagueError('Error al ingresar: ' + signInError.message);
+        } else {
           setShowLeagueModal(false);
-          setRegSuccess('');
-        }, 1500);
+        }
       }
     } catch (err) {
-      setRegError('Ocurrió un error inesperado');
+      setLeagueError('Ocurrió un error inesperado');
     } finally {
-      setRegLoading(false);
-    }
-  };
-
-  // Handle Client Login
-  const handleClientLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError('');
-    setLoginLoading(true);
-
-    try {
-      const { error: err } = await signIn(loginEmail, loginPassword);
-      if (err) {
-        setLoginError(err.message || 'Credenciales incorrectas.');
-      } else {
-        setShowLeagueModal(false);
-      }
-    } catch (err) {
-      setLoginError('Ocurrió un error inesperado');
-    } finally {
-      setLoginLoading(false);
+      setLeagueLoading(false);
     }
   };
 
@@ -247,7 +241,9 @@ export const Landing: React.FC = () => {
               className="btn btn-primary" 
               style={styles.startBtn}
               onClick={() => {
-                setModalTab('code');
+                setLeagueCode('');
+                setLeagueError('');
+                setLeagueSuccess('');
                 setShowLeagueModal(true);
               }}
             >
@@ -258,7 +254,7 @@ export const Landing: React.FC = () => {
         </div>
       </div>
 
-      {/* Acceso a tu liga Modal (Tabs for register code vs login) */}
+      {/* Acceso a tu liga Modal */}
       {showLeagueModal && (
         <div style={styles.modalOverlay}>
           <div className="glass-panel" style={styles.modalContent}>
@@ -267,172 +263,46 @@ export const Landing: React.FC = () => {
               type="button" 
               onClick={() => {
                 setShowLeagueModal(false);
-                setRegError('');
-                setRegSuccess('');
-                setLoginError('');
+                setLeagueError('');
+                setLeagueSuccess('');
               }}
               style={styles.modalCloseX}
             >
               &times;
             </button>
 
-            {/* Modal Tabs */}
-            <div style={styles.modalTabs}>
+            <form onSubmit={handleLeagueAccess} style={styles.modalForm}>
+              <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                <Key size={40} color="#f59e0b" />
+              </div>
+              <h3 style={{ ...styles.modalTitle, textAlign: 'center' }}>Acceso a tu Liga</h3>
+              <p style={{ ...styles.modalSubtitle, textAlign: 'center' }}>Ingresa tu Código de Liga para acceder de forma inmediata a la administración de tus torneos.</p>
+              
+              {leagueError && <div style={styles.errorAlert}>{leagueError}</div>}
+              {leagueSuccess && <div style={styles.successAlert}>{leagueSuccess}</div>}
+              
+              <div className="form-group">
+                <label className="form-label" style={{ textAlign: 'center', display: 'block' }}>Código de Liga / Invitación</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  style={styles.modalCodeInput}
+                  placeholder="LIGA-XXXXXX"
+                  value={leagueCode}
+                  onChange={(e) => setLeagueCode(e.target.value.toUpperCase())}
+                  required
+                />
+              </div>
+
               <button 
-                style={{
-                  ...styles.modalTabBtn,
-                  borderBottom: modalTab === 'code' ? '2px solid #f59e0b' : 'none',
-                  color: modalTab === 'code' ? '#ffffff' : 'var(--color-text-muted)',
-                }}
-                onClick={() => setModalTab('code')}
+                type="submit" 
+                className="btn btn-primary" 
+                style={styles.submitBtn}
+                disabled={leagueLoading}
               >
-                <Key size={16} style={{ marginRight: '6px' }} />
-                Registrarse con Código
+                {leagueLoading ? 'Ingresando...' : 'Ingresar a mi Liga'}
               </button>
-              <button 
-                style={{
-                  ...styles.modalTabBtn,
-                  borderBottom: modalTab === 'login' ? '2px solid #f59e0b' : 'none',
-                  color: modalTab === 'login' ? '#ffffff' : 'var(--color-text-muted)',
-                }}
-                onClick={() => setModalTab('login')}
-              >
-                <LogIn size={16} style={{ marginRight: '6px' }} />
-                Iniciar Sesión
-              </button>
-            </div>
-
-            {/* TAB: Register with Code */}
-            {modalTab === 'code' && (
-              <form onSubmit={handleRegisterWithCode} style={styles.modalForm}>
-                <h3 style={styles.modalTitle}>Acceso con Código</h3>
-                <p style={styles.modalSubtitle}>Crea tu cuenta de organizador ingresando el código único provisto por el Super Administrador.</p>
-                
-                {regError && <div style={styles.errorAlert}>{regError}</div>}
-                {regSuccess && <div style={styles.successAlert}>{regSuccess}</div>}
-                
-                <div className="form-group">
-                  <label className="form-label">Código de Liga / Invitación</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    style={styles.modalCodeInput}
-                    placeholder="LIGA-XXXXXX"
-                    value={regCode}
-                    onChange={(e) => setRegCode(e.target.value.toUpperCase())}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Nombre del Organizador</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Ej. Club de Póker Lara"
-                    value={regName}
-                    onChange={(e) => setRegName(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Correo Electrónico</label>
-                  <input
-                    type="email"
-                    className="form-input"
-                    placeholder="correo@servidor.com"
-                    value={regEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Contraseña</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      className="form-input"
-                      placeholder="••••••••"
-                      style={{ paddingRight: '40px' }}
-                      value={regPassword}
-                      onChange={(e) => setRegPassword(e.target.value)}
-                      required
-                    />
-                    <button 
-                      type="button" 
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={styles.passwordToggle}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                <button 
-                  type="submit" 
-                  className="btn btn-primary" 
-                  style={styles.submitBtn}
-                  disabled={regLoading}
-                >
-                  {regLoading ? 'Registrando...' : 'Registrar Cuenta de Liga'}
-                </button>
-              </form>
-            )}
-
-            {/* TAB: Standard Login */}
-            {modalTab === 'login' && (
-              <form onSubmit={handleClientLogin} style={styles.modalForm}>
-                <h3 style={styles.modalTitle}>Iniciar Sesión</h3>
-                <p style={styles.modalSubtitle}>Ingresa tus credenciales de organizador para administrar tus torneos en curso.</p>
-                
-                {loginError && <div style={styles.errorAlert}>{loginError}</div>}
-                
-                <div className="form-group">
-                  <label className="form-label">Correo Electrónico</label>
-                  <input
-                    type="email"
-                    className="form-input"
-                    placeholder="organizador@poker.com"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Contraseña</label>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      className="form-input"
-                      placeholder="••••••••"
-                      style={{ paddingRight: '40px' }}
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      required
-                    />
-                    <button 
-                      type="button" 
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={styles.passwordToggle}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                <button 
-                  type="submit" 
-                  className="btn btn-primary" 
-                  style={styles.submitBtn}
-                  disabled={loginLoading}
-                >
-                  {loginLoading ? 'Ingresando...' : 'Iniciar Sesión'}
-                </button>
-              </form>
-            )}
+            </form>
           </div>
         </div>
       )}
