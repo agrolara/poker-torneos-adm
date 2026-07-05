@@ -78,7 +78,7 @@ export interface TournamentPlayer {
 export interface TournamentLog {
   id: string;
   tournament_id: string;
-  event_type: 'elimination' | 'rebuy' | 'addon' | 'level_change' | 'timer_action';
+  event_type: 'elimination' | 'rebuy' | 'addon' | 'level_change' | 'timer_action' | 'balancing' | 'correction';
   payload: any;
   created_at: string;
 }

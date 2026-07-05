@@ -570,3 +570,15 @@ input:checked + .slider:before {
   z-index: 0;
   user-select: none;
 }
+
+/* Undo Toast Animation */
+@keyframes slideUp {
+  from {
+    transform: translateX(-50%) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+}

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Tournament, TournamentPlayer, Level, BlindStructure, TournamentLog } from '../types';
-import { Play, Pause, FastForward, Rewind, Users, Award, ShieldAlert, Tv, ArrowLeft, RefreshCw, Shuffle } from 'lucide-react';
+import { Play, Pause, FastForward, Rewind, Users, Award, ShieldAlert, Tv, ArrowLeft, RefreshCw, Shuffle, Undo2, RotateCcw, AlertTriangle } from 'lucide-react';
 
 interface TournamentControlProps {
   tournament: Tournament;
@@ -34,6 +34,14 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   
   // Seating balancing recommendation
   const [balancingAlert, setBalancingAlert] = useState<string | null>(null);
+
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState<{ show: boolean; player: TournamentPlayer | null; action: string }>({ show: false, player: null, action: '' });
+
+  // Undo toast state
+  const [undoToast, setUndoToast] = useState<{ show: boolean; message: string; undoFn: (() => Promise<void>) | null; timer: ReturnType<typeof setTimeout> | null }>({ show: false, message: '', undoFn: null, timer: null });
+  const undoToastRef = useRef(undoToast);
+  undoToastRef.current = undoToast;
   
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
@@ -317,7 +325,27 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     }
   };
 
+  const showUndoToast = (message: string, undoFn: () => Promise<void>) => {
+    // Clear previous toast timer
+    if (undoToastRef.current.timer) clearTimeout(undoToastRef.current.timer);
+    const timer = setTimeout(() => {
+      setUndoToast({ show: false, message: '', undoFn: null, timer: null });
+    }, 15000);
+    setUndoToast({ show: true, message, undoFn, timer });
+  };
+
+  const dismissUndoToast = () => {
+    if (undoToastRef.current.timer) clearTimeout(undoToastRef.current.timer);
+    setUndoToast({ show: false, message: '', undoFn: null, timer: null });
+  };
+
   const handleAddPlayerAction = async (player: TournamentPlayer, type: 'rebuy' | 'addon' | 'eliminate') => {
+    // For eliminations, show confirmation modal first
+    if (type === 'eliminate') {
+      setConfirmModal({ show: true, player, action: 'eliminate' });
+      return;
+    }
+
     try {
       if (type === 'rebuy') {
         const newCount = player.rebuys_count + 1;
@@ -328,6 +356,14 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
         
         if (error) throw error;
         addLog('rebuy', { player_name: getPlayerName(player), count: newCount });
+
+        // Undo toast for rebuy
+        const prevCount = player.rebuys_count;
+        showUndoToast(`Recompra #${newCount} registrada para ${getPlayerName(player)}`, async () => {
+          await supabase.from('tournament_players').update({ rebuys_count: prevCount }).eq('id', player.id);
+          addLog('correction', { message: `Recompra #${newCount} de ${getPlayerName(player)} fue deshecha` });
+          fetchTournamentData();
+        });
       } else if (type === 'addon') {
         const { error } = await supabase
           .from('tournament_players')
@@ -336,30 +372,102 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
         
         if (error) throw error;
         addLog('addon', { player_name: getPlayerName(player) });
-      } else if (type === 'eliminate') {
-        const activeCount = players.filter(p => p.status === 'active').length;
-        const { error } = await supabase
-          .from('tournament_players')
-          .update({ 
-            status: 'eliminated',
-            elimination_position: activeCount // 10th place, 9th place, etc.
-          })
-          .eq('id', player.id);
-        
-        if (error) throw error;
-        
-        // Voice alert on elimination
-        speakAnnounce(`${getPlayerName(player)} ha sido eliminado en la posición ${activeCount}`);
-        
-        addLog('elimination', { player_name: getPlayerName(player), position: activeCount });
 
-        // If only 1 player remains, mark tournament as completed!
-        if (activeCount === 2) {
-          handleCompleteTournament(player.id); // The other active player is the winner!
-        }
+        // Undo toast for addon
+        showUndoToast(`Add-On registrado para ${getPlayerName(player)}`, async () => {
+          await supabase.from('tournament_players').update({ has_add_on: false }).eq('id', player.id);
+          addLog('correction', { message: `Add-On de ${getPlayerName(player)} fue deshecho` });
+          fetchTournamentData();
+        });
       }
       
       // Reload players and logs
+      fetchTournamentData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleConfirmElimination = async () => {
+    const player = confirmModal.player;
+    if (!player) return;
+    setConfirmModal({ show: false, player: null, action: '' });
+
+    try {
+      const activeCount = players.filter(p => p.status === 'active').length;
+      const prevTable = player.table_number;
+      const prevSeat = player.seat_number;
+
+      const { error } = await supabase
+        .from('tournament_players')
+        .update({ 
+          status: 'eliminated',
+          elimination_position: activeCount
+        })
+        .eq('id', player.id);
+      
+      if (error) throw error;
+      
+      speakAnnounce(`${getPlayerName(player)} ha sido eliminado en la posición ${activeCount}`);
+      addLog('elimination', { player_name: getPlayerName(player), position: activeCount });
+
+      // Undo toast for elimination
+      showUndoToast(`${getPlayerName(player)} eliminado en posición #${activeCount}`, async () => {
+        await supabase.from('tournament_players').update({ 
+          status: 'active', 
+          elimination_position: null,
+          table_number: prevTable,
+          seat_number: prevSeat
+        }).eq('id', player.id);
+        addLog('correction', { message: `Eliminación de ${getPlayerName(player)} fue deshecha. Restituido a Mesa ${prevTable} / Silla ${prevSeat}` });
+        fetchTournamentData();
+      });
+
+      if (activeCount === 2) {
+        handleCompleteTournament(player.id);
+      }
+      
+      fetchTournamentData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRestorePlayer = async (player: TournamentPlayer) => {
+    try {
+      // Find an empty seat on the table with the fewest players
+      const activePs = players.filter(p => p.status === 'active');
+      const tableCounts: Record<number, number> = {};
+      activePs.forEach(p => {
+        if (p.table_number) tableCounts[p.table_number] = (tableCounts[p.table_number] || 0) + 1;
+      });
+      
+      let targetTable = 1;
+      let minCount = Infinity;
+      Object.entries(tableCounts).forEach(([t, c]) => {
+        if (c < minCount) { minCount = c; targetTable = Number(t); }
+      });
+
+      const occupiedSeats = new Set(activePs.filter(p => p.table_number === targetTable).map(p => p.seat_number));
+      let emptySeat = 1;
+      for (let s = 1; s <= tournament.max_players_per_table; s++) {
+        if (!occupiedSeats.has(s)) { emptySeat = s; break; }
+      }
+
+      const { error } = await supabase
+        .from('tournament_players')
+        .update({ 
+          status: 'active', 
+          elimination_position: null,
+          table_number: targetTable,
+          seat_number: emptySeat
+        })
+        .eq('id', player.id);
+      
+      if (error) throw error;
+
+      addLog('correction', { message: `${getPlayerName(player)} fue restituido al torneo (Mesa ${targetTable} / Silla ${emptySeat})` });
+      speakAnnounce(`${getPlayerName(player)} ha sido restituido al torneo`);
       fetchTournamentData();
     } catch (e) {
       console.error(e);
@@ -1005,6 +1113,20 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                                 Eliminar
                               </button>
                             </div>
+                          ) : p.status === 'eliminated' && tournament.status !== 'completed' ? (
+                            <div style={styles.actions}>
+                              <span style={styles.finishedLabel}>
+                                {p.elimination_position ? `${p.elimination_position}° Posición` : '-'}
+                              </span>
+                              <button 
+                                className="btn btn-outline" 
+                                style={{ ...styles.actionBtnSmall, color: '#818cf8', borderColor: '#818cf8' }}
+                                onClick={() => handleRestorePlayer(p)}
+                                title="Restituir jugador al torneo"
+                              >
+                                <RotateCcw size={12} /> Restituir
+                              </button>
+                            </div>
                           ) : (
                             <span style={styles.finishedLabel}>
                               {p.elimination_position ? `${p.elimination_position}° Posición` : '-'}
@@ -1021,6 +1143,73 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
         </div>
       </div>
 
+      {/* Undo Toast */}
+      {undoToast.show && (
+        <div style={styles.undoToast}>
+          <Undo2 size={16} color="#f59e0b" />
+          <span style={{ flex: 1 }}>{undoToast.message}</span>
+          <button 
+            className="btn" 
+            style={styles.undoBtn}
+            onClick={async () => {
+              if (undoToast.undoFn) await undoToast.undoFn();
+              dismissUndoToast();
+            }}
+          >
+            <RotateCcw size={13} /> Deshacer
+          </button>
+          <button 
+            style={styles.undoDismiss}
+            onClick={dismissUndoToast}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmModal.show && confirmModal.player && (
+        <div style={styles.modalOverlay} onClick={() => setConfirmModal({ show: false, player: null, action: '' })}>
+          <div style={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.confirmIcon}>
+              <AlertTriangle size={32} color="#ef4444" />
+            </div>
+            <h3 style={{ margin: '0 0 6px', fontSize: '1.1rem' }}>Confirmar Eliminación</h3>
+            <p style={{ margin: '0 0 8px', color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>
+              ¿Estás seguro de que deseas eliminar a este jugador?
+            </p>
+            <div style={styles.confirmPlayerInfo}>
+              <strong>{getPlayerName(confirmModal.player)}</strong>
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                Mesa {confirmModal.player.table_number} / Silla {confirmModal.player.seat_number}
+              </span>
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                Posición resultante: #{players.filter(p => p.status === 'active').length}°
+              </span>
+            </div>
+            <div style={styles.confirmButtons}>
+              <button 
+                className="btn btn-outline" 
+                style={{ flex: 1 }}
+                onClick={() => setConfirmModal({ show: false, player: null, action: '' })}
+              >
+                Cancelar
+              </button>
+              <button 
+                className="btn btn-danger" 
+                style={{ flex: 1, color: '#ffffff' }}
+                onClick={handleConfirmElimination}
+              >
+                Sí, Eliminar
+              </button>
+            </div>
+            <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontSize: '0.75rem', textAlign: 'center' }}>
+              Podrás deshacer esta acción durante 15 segundos después de confirmar.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Activity Feed Section */}
       <div className="glass-panel" style={styles.logsSection}>
         <h3 style={styles.subTitle}>Registro de Actividad</h3>
@@ -1035,13 +1224,15 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 backgroundColor: 
                   log.event_type === 'elimination' ? 'rgba(239, 68, 68, 0.15)' :
                   log.event_type === 'rebuy' ? 'rgba(245, 158, 11, 0.15)' :
-                  log.event_type === 'addon' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                  log.event_type === 'addon' ? 'rgba(16, 185, 129, 0.15)' :
+                  log.event_type === 'correction' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                 color:
                   log.event_type === 'elimination' ? '#ef4444' :
                   log.event_type === 'rebuy' ? '#f59e0b' :
-                  log.event_type === 'addon' ? '#10b981' : '#94a3b8'
+                  log.event_type === 'addon' ? '#10b981' :
+                  log.event_type === 'correction' ? '#818cf8' : '#94a3b8'
               }}>
-                {log.event_type.toUpperCase()}
+                {log.event_type === 'correction' ? 'CORRECCIÓN' : log.event_type.toUpperCase()}
               </span>
               <span style={styles.logMessage}>
                 {log.event_type === 'elimination' && `Jugador ${log.payload.player_name} fue eliminado en la posición #${log.payload.position}`}
@@ -1049,6 +1240,8 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 {log.event_type === 'addon' && `Jugador ${log.payload.player_name} realizó add-on`}
                 {log.event_type === 'level_change' && `Nivel cambiado a #${log.payload.level} (${log.payload.small_blind}/${log.payload.big_blind})`}
                 {log.event_type === 'timer_action' && log.payload.message}
+                {log.event_type === 'balancing' && log.payload.message}
+                {log.event_type === 'correction' && log.payload.message}
               </span>
             </div>
           ))}
@@ -1516,5 +1709,91 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  undoToast: {
+    position: 'fixed',
+    bottom: '24px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    background: 'rgba(3, 7, 18, 0.95)',
+    border: '1px solid rgba(245, 158, 11, 0.3)',
+    borderRadius: '12px',
+    padding: '12px 20px',
+    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)',
+    zIndex: 9999,
+    minWidth: '320px',
+    maxWidth: '580px',
+    fontSize: '0.88rem',
+    color: '#ffffff',
+    backdropFilter: 'blur(10px)',
+    animation: 'slideUp 0.3s ease',
+  },
+  undoBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '6px 14px',
+    fontSize: '0.8rem',
+    fontWeight: 750,
+    borderRadius: '6px',
+    background: '#f59e0b',
+    color: '#000000',
+    border: 'none',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+  undoDismiss: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--color-text-muted)',
+    cursor: 'pointer',
+    fontSize: '1rem',
+    padding: '4px',
+    lineHeight: 1,
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0, 0, 0, 0.7)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9998,
+    backdropFilter: 'blur(4px)',
+  },
+  confirmModal: {
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border-color)',
+    borderRadius: 'var(--radius-lg)',
+    padding: '28px',
+    maxWidth: '400px',
+    width: '90%',
+    textAlign: 'center',
+    boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+  },
+  confirmIcon: {
+    display: 'flex',
+    justifyContent: 'center',
+    marginBottom: '12px',
+  },
+  confirmPlayerInfo: {
+    background: 'rgba(239, 68, 68, 0.05)',
+    border: '1px solid rgba(239, 68, 68, 0.15)',
+    borderRadius: '8px',
+    padding: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    marginBottom: '16px',
+  },
+  confirmButtons: {
+    display: 'flex',
+    gap: '10px',
   },
 };
