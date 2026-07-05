@@ -76,7 +76,9 @@ export const Landing: React.FC = () => {
       // Generate deterministic credentials based on league code
       const email = `liga-${cleanCode.toLowerCase()}@poker.com`;
       const password = `pwd-${cleanCode.toLowerCase()}-poker`;
-      const name = `Liga ${cleanCode}`;
+      const name = codeData.client_name && codeData.client_name !== 'Sin Nombre' 
+        ? codeData.client_name 
+        : `Liga ${cleanCode}`;
 
       if (!codeData.used_by) {
         // Activate code (first time use - signs up and registers profile/claims code)

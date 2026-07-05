@@ -1,5 +1,5 @@
 async function testRawSignUp() {
-  const email = `test-${Math.random().toString(36).substring(7)}@poker.com`;
+  const email = `liga-${Math.random().toString(36).substring(7)}@poker.com`;
   const password = 'test-password-12345';
   console.log(`Testing raw fetch signup with email: ${email}`);
 

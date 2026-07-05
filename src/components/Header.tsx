@@ -43,7 +43,18 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
       {/* Right User info and signout */}
       <div style={styles.userSection}>
         <span style={styles.welcomeText}>
-          Organizador: <strong style={styles.orgName}>{profile?.name || (user?.email === 'materiales.integrity@gmail.com' ? 'Mauricio Lara' : user?.email) || 'Cargando...'}</strong>
+          {user?.email?.startsWith('liga-') ? (
+            <>
+              Organizador: <strong style={styles.orgName}>{profile?.name || 'Liga'}</strong>{' '}
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginLeft: '6px', fontFamily: 'monospace', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                {user.email.split('@')[0].toUpperCase()}
+              </span>
+            </>
+          ) : (
+            <>
+              Organizador: <strong style={styles.orgName}>{profile?.name || (user?.email === 'materiales.integrity@gmail.com' ? 'Mauricio Lara' : user?.email) || 'Cargando...'}</strong>
+            </>
+          )}
         </span>
         <button className="btn btn-outline" style={styles.logoutBtn} onClick={signOut} title="Cerrar Sesión">
           <LogOut size={16} />
