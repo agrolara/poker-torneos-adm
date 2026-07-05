@@ -17,6 +17,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     totalPrizePool: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [dashboardTab, setDashboardTab] = useState<'championship' | 'standalone'>('championship');
+
+  const championshipTournaments = tournaments.filter(t => t.championship_id !== null);
+  const standaloneTournaments = tournaments.filter(t => t.championship_id === null);
+  const activeTournamentsList = dashboardTab === 'championship' ? championshipTournaments : standaloneTournaments;
 
   // Super Admin state
   const [leagueCodes, setLeagueCodes] = useState<any[]>([]);
@@ -186,21 +191,49 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </button>
           </div>
 
-          {tournaments.length === 0 ? (
+          {/* Tabs for Championship vs Standalone */}
+          <div style={styles.tabHeader}>
+            <button
+              style={{
+                ...styles.tabLink,
+                borderBottom: dashboardTab === 'championship' ? '2px solid var(--color-primary)' : 'none',
+                color: dashboardTab === 'championship' ? '#ffffff' : 'var(--color-text-muted)',
+              }}
+              onClick={() => setDashboardTab('championship')}
+            >
+              Fechas de Campeonato ({championshipTournaments.length})
+            </button>
+            <button
+              style={{
+                ...styles.tabLink,
+                borderBottom: dashboardTab === 'standalone' ? '2px solid var(--color-primary)' : 'none',
+                color: dashboardTab === 'standalone' ? '#ffffff' : 'var(--color-text-muted)',
+              }}
+              onClick={() => setDashboardTab('standalone')}
+            >
+              Partidas Aisladas ({standaloneTournaments.length})
+            </button>
+          </div>
+
+          {activeTournamentsList.length === 0 ? (
             <div style={styles.emptyState}>
               <Award size={48} color="var(--color-text-muted)" style={{ marginBottom: '16px' }} />
-              <p style={{ color: 'var(--color-text-secondary)' }}>No tienes torneos registrados.</p>
+              <p style={{ color: 'var(--color-text-secondary)' }}>
+                {dashboardTab === 'championship' 
+                  ? 'No hay torneos de campeonato registrados.' 
+                  : 'No hay partidas aisladas registradas.'}
+              </p>
               <button 
                 className="btn btn-outline" 
                 style={{ marginTop: '16px' }}
                 onClick={() => onNavigate('setup')}
               >
-                Crear mi primer torneo
+                Crear {dashboardTab === 'championship' ? 'fecha de campeonato' : 'partida aislada'}
               </button>
             </div>
           ) : (
             <div style={styles.tourneysList}>
-              {tournaments.map((t) => (
+              {activeTournamentsList.map((t) => (
                 <div key={t.id} style={styles.tourneyRow}>
                   <div style={styles.tourneyInfo}>
                     <div style={styles.tourneyHeader}>
@@ -450,6 +483,21 @@ const styles: Record<string, React.CSSProperties> = {
   sectionTitle: {
     fontSize: '1.4rem',
     fontWeight: 700,
+  },
+  tabHeader: {
+    display: 'flex',
+    gap: '20px',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+    marginBottom: '20px',
+  },
+  tabLink: {
+    background: 'none',
+    border: 'none',
+    padding: '10px 16px',
+    fontSize: '0.9rem',
+    fontWeight: 650,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
   },
   emptyState: {
     padding: '60px 20px',

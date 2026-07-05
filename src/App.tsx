@@ -5,6 +5,7 @@ import { Landing } from './views/Landing';
 import { Dashboard } from './views/Dashboard';
 import { Players } from './views/Players';
 import { Structures } from './views/Structures';
+import { Championships } from './views/Championships';
 import { TournamentSetup } from './views/TournamentSetup';
 import { TournamentControl } from './views/TournamentControl';
 import { TVDisplay } from './views/TVDisplay';
@@ -91,6 +92,10 @@ const AppContent: React.FC = () => {
         
         {view === 'structures' && (
           <Structures onBack={() => setView('dashboard')} />
+        )}
+        
+        {view === 'championships' && (
+          <Championships onNavigate={handleNavigate} />
         )}
         
         {view === 'setup' && (

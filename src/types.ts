@@ -40,6 +40,16 @@ export interface Tournament {
   max_players_per_table: number;
   payout_structure: number[]; // e.g. [50, 30, 20]
   structure_id?: string;
+  championship_id?: string;
+  created_at: string;
+}
+
+export interface Championship {
+  id: string;
+  organizer_id: string;
+  name: string;
+  description: string | null;
+  status: 'active' | 'completed';
   created_at: string;
 }
 

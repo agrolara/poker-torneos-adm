@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Trophy, Users, Clock, Home } from 'lucide-react';
+import { LogOut, Trophy, Users, Clock, Home, Award } from 'lucide-react';
 
 interface HeaderProps {
   currentView: string;
@@ -25,6 +25,12 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
           onClick={() => onNavigate('dashboard')}
         >
           <Home size={16} /> Panel
+        </button>
+        <button 
+          style={{ ...styles.navLink, color: currentView === 'championships' ? 'var(--color-primary)' : 'var(--color-text-secondary)' }}
+          onClick={() => onNavigate('championships')}
+        >
+          <Award size={16} /> Campeonatos
         </button>
         <button 
           style={{ ...styles.navLink, color: currentView === 'players' ? 'var(--color-primary)' : 'var(--color-text-secondary)' }}

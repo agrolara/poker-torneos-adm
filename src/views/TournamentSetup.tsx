@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import type { Player, BlindStructure } from '../types';
+import type { Player, BlindStructure, Championship } from '../types';
 import { ArrowLeft, Users, Play, Plus, Trash2, Check, Settings, Shield, ChevronRight } from 'lucide-react';
 
 interface TournamentSetupProps {
@@ -26,6 +26,8 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
   
   const [structures, setStructures] = useState<BlindStructure[]>([]);
   const [selectedStructureId, setSelectedStructureId] = useState('');
+  const [championships, setChampionships] = useState<Championship[]>([]);
+  const [selectedChampionshipId, setSelectedChampionshipId] = useState('');
   const [maxPlayersPerTable, setMaxPlayersPerTable] = useState(8);
   const [payoutOption, setPayoutOption] = useState('1'); // 1: Top 3 (50-30-20), 2: Top 2 (70-30), 3: Winner takes all (100)
   
@@ -54,6 +56,14 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
       if (structuresData && structuresData.length > 0) {
         setSelectedStructureId(structuresData[0].id);
       }
+
+      // Fetch active championships
+      const { data: championshipsData } = await supabase
+        .from('championships')
+        .select('*')
+        .eq('status', 'active')
+        .order('name', { ascending: true });
+      setChampionships(championshipsData || []);
 
       // Fetch players
       const { data: playersData } = await supabase
@@ -140,6 +150,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
           max_players_per_table: Number(maxPlayersPerTable),
           payout_structure: payoutStructure,
           structure_id: selectedStructureId || null,
+          championship_id: selectedChampionshipId || null,
         })
         .select()
         .single();
@@ -245,6 +256,16 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
                   )}
                 </select>
               </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Asociar a Campeonato</label>
+              <select className="form-input" value={selectedChampionshipId} onChange={(e) => setSelectedChampionshipId(e.target.value)}>
+                <option value="">Ninguno - Partida Aislada</option>
+                {championships.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
             </div>
 
             <div className="form-group">
