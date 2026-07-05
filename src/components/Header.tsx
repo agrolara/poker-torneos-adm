@@ -44,15 +44,18 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
       <div style={styles.userSection}>
         <span style={styles.welcomeText}>
           {user?.email?.startsWith('liga-') ? (
-            <>
-              Organizador: <strong style={styles.orgName}>{profile?.name || 'Liga'}</strong>{' '}
-              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginLeft: '6px', fontFamily: 'monospace', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>
-                {user.email.split('@')[0].toUpperCase()}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+              <span>
+                Liga: <strong style={styles.orgName}>{profile?.name || 'Liga'}</strong>
               </span>
-            </>
+              <span style={{ color: 'rgba(255,255,255,0.15)' }}>|</span>
+              <span>
+                Código: <strong style={{ color: 'var(--color-primary)', fontFamily: 'monospace', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.85rem' }}>{user.email.split('@')[0].toUpperCase()}</strong>
+              </span>
+            </span>
           ) : (
             <>
-              Organizador: <strong style={styles.orgName}>{profile?.name || (user?.email === 'materiales.integrity@gmail.com' ? 'Mauricio Lara' : user?.email) || 'Cargando...'}</strong>
+              {user?.email === 'materiales.integrity@gmail.com' ? 'Super Administrador' : 'Organizador'}: <strong style={styles.orgName}>{profile?.name || (user?.email === 'materiales.integrity@gmail.com' ? 'Mauricio Lara' : user?.email) || 'Cargando...'}</strong>
             </>
           )}
         </span>
