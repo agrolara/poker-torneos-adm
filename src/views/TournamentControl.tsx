@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Tournament, TournamentPlayer, Level, BlindStructure, TournamentLog } from '../types';
-import { Play, Pause, FastForward, Rewind, Users, Award, ShieldAlert, Tv, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Play, Pause, FastForward, Rewind, Users, Award, ShieldAlert, Tv, ArrowLeft, RefreshCw, Shuffle } from 'lucide-react';
 
 interface TournamentControlProps {
   tournament: Tournament;
@@ -469,6 +469,96 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     window.open(`?tv=true`, '_blank', 'width=1000,height=700,menubar=no,toolbar=no,location=no');
   };
 
+  const handleMovePlayerTable = async (playerTournamentId: string, newTable: number) => {
+    try {
+      const { error } = await supabase
+        .from('tournament_players')
+        .update({ table_number: newTable })
+        .eq('id', playerTournamentId);
+
+      if (error) throw error;
+      await fetchTournamentData();
+    } catch (err) {
+      console.error('Error moving player table:', err);
+    }
+  };
+
+  const handleMovePlayerSeat = async (playerTournamentId: string, newSeat: number) => {
+    try {
+      const { error } = await supabase
+        .from('tournament_players')
+        .update({ seat_number: newSeat })
+        .eq('id', playerTournamentId);
+
+      if (error) throw error;
+      await fetchTournamentData();
+    } catch (err) {
+      console.error('Error moving player seat:', err);
+    }
+  };
+
+  const handleAutoBalance = async () => {
+    try {
+      const activePlayers = players.filter(pl => pl.status === 'active');
+      const tableCounts: Record<number, number> = {};
+      activePlayers.forEach(pl => {
+        if (pl.table_number) {
+          tableCounts[pl.table_number] = (tableCounts[pl.table_number] || 0) + 1;
+        }
+      });
+
+      const tables = Object.keys(tableCounts).map(Number);
+      if (tables.length < 2) return;
+
+      let maxTable = tables[0];
+      let minTable = tables[0];
+      
+      tables.forEach(t => {
+        if (tableCounts[t] > tableCounts[maxTable]) maxTable = t;
+        if (tableCounts[t] < tableCounts[minTable]) minTable = t;
+      });
+
+      if (tableCounts[maxTable] - tableCounts[minTable] <= 1) {
+        alert('Las mesas ya están balanceadas.');
+        return;
+      }
+
+      const playerToMove = activePlayers.find(pl => pl.table_number === maxTable);
+      if (!playerToMove) return;
+
+      const occupiedSeats = new Set(activePlayers.filter(pl => pl.table_number === minTable).map(pl => pl.seat_number));
+      let emptySeat = 1;
+      for (let s = 1; s <= tournament.max_players_per_table; s++) {
+        if (!occupiedSeats.has(s)) {
+          emptySeat = s;
+          break;
+        }
+      }
+
+      const { error } = await supabase
+        .from('tournament_players')
+        .update({ 
+          table_number: minTable,
+          seat_number: emptySeat
+        })
+        .eq('id', playerToMove.id);
+
+      if (error) throw error;
+
+      await supabase.from('tournament_logs').insert({
+        tournament_id: tournament.id,
+        event_type: 'balancing',
+        payload: {
+          message: `Mesa balanceada: Se movió a ${getPlayerName(playerToMove)} de Mesa ${maxTable} a Mesa ${minTable} (Silla ${emptySeat})`
+        }
+      });
+
+      await fetchTournamentData();
+    } catch (err) {
+      console.error('Error auto balancing tables:', err);
+    }
+  };
+
   // Helper selectors
   const getCurrentLevel = (): Level | null => {
     if (!structure) return null;
@@ -580,9 +670,21 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
         <div style={styles.balancingAlertCard}>
           <ShieldAlert size={20} color="var(--color-secondary)" />
           <span style={styles.balancingText}>{balancingAlert}</span>
-          <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '0.75rem', marginLeft: 'auto' }} onClick={fetchTournamentData}>
-            Recalcular <RefreshCw size={12} />
-          </button>
+          
+          <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', alignItems: 'center' }}>
+            {balancingAlert.includes('Desbalance') && (
+              <button 
+                className="btn btn-accent" 
+                style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }} 
+                onClick={handleAutoBalance}
+              >
+                Balancear Mesa <Shuffle size={12} />
+              </button>
+            )}
+            <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={fetchTournamentData}>
+              Recalcular <RefreshCw size={12} />
+            </button>
+          </div>
         </div>
       )}
 
@@ -716,7 +818,32 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                         </div>
                       </td>
                       <td style={styles.td}>
-                        {isActive ? `Mesa ${p.table_number} / Silla ${p.seat_number}` : '-'}
+                        {isActive ? (
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <select 
+                              value={p.table_number || ''} 
+                              onChange={(e) => handleMovePlayerTable(p.id, Number(e.target.value))}
+                              className="form-input"
+                              style={{ padding: '4px 8px', fontSize: '0.8rem', width: '90px', background: 'rgba(3,7,18,0.4)', margin: 0 }}
+                            >
+                              {Array.from({ length: Math.ceil(players.filter(pl => pl.status === 'active').length / tournament.max_players_per_table) }).map((_, i) => (
+                                <option key={i+1} value={i+1}>Mesa {i+1}</option>
+                              ))}
+                            </select>
+                            <select 
+                              value={p.seat_number || ''} 
+                              onChange={(e) => handleMovePlayerSeat(p.id, Number(e.target.value))}
+                              className="form-input"
+                              style={{ padding: '4px 8px', fontSize: '0.8rem', width: '80px', background: 'rgba(3,7,18,0.4)', margin: 0 }}
+                            >
+                              {Array.from({ length: tournament.max_players_per_table }).map((_, i) => (
+                                <option key={i+1} value={i+1}>Silla {i+1}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          '-'
+                        )}
                       </td>
                       <td style={styles.td}>
                         {p.rebuys_count}
