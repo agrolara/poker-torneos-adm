@@ -3,7 +3,6 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
 import { Zap, Key, Eye, EyeOff, Shield, Tv, Users, Landmark, Award, ArrowRight } from 'lucide-react';
 import logoImg from '../assets/logo.png';
-import landingImg from '../assets/landing.png';
 
 export const Landing: React.FC = () => {
   const { signIn, signUp } = useAuth();
@@ -121,12 +120,12 @@ export const Landing: React.FC = () => {
       <div style={styles.glow2}></div>
 
       {/* Header section with Logo, OAuth, and Action Buttons */}
-      <header style={styles.header}>
+      <header className="glass-panel app-header" style={styles.header}>
         <div style={styles.logoWrapper}>
           <img src={logoImg} alt="Logo" style={styles.logo} />
           <span style={styles.logoText}>Poker Director</span>
         </div>
-        <div style={styles.headerActions}>
+        <div className="app-nav" style={styles.headerActions}>
           <button 
             className="btn btn-outline" 
             style={styles.adminBtn}
@@ -154,7 +153,7 @@ export const Landing: React.FC = () => {
             href="https://wa.me/56993005959" 
             target="_blank" 
             rel="noopener noreferrer" 
-            style={styles.whatsappLink}
+            className="whatsapp-premium-btn"
           >
             <svg style={styles.whatsappIcon} viewBox="0 0 24 24" fill="currentColor">
               <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.513 2.262 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.625 1.451 5.403.002 9.803-4.386 9.807-9.78.002-2.613-1.013-5.074-2.86-6.92C16.315 2.059 13.859 1.042 11.25 1.042c-5.41 0-9.81 4.387-9.814 9.78-.002 1.704.447 3.37 1.287 4.853L1.68 20.306l4.967-1.152zM17.487 14.39c-.314-.157-1.857-.915-2.147-1.02-.29-.105-.5-.157-.712.157-.21.314-.818 1.02-.818 1.02-.21.262-.42.315-.733.157-1.637-.629-2.92-1.258-4.084-3.26-.31-.53.31-.49.886-.98.156-.156.262-.262.366-.418.105-.157.052-.314-.026-.47-.079-.158-.713-1.716-.977-2.35-.262-.629-.533-.53-.733-.54-.2-.01-.42-.015-.63-.015s-.556.079-.846.398c-.29.314-1.11 1.085-1.11 2.646s1.14 3.072 1.298 3.282c.157.21 2.23 3.407 5.4 4.773 1.157.498 2.062.8 2.766 1.023.754.238 1.44.204 1.98.123.6-.09 1.857-.76 2.12-1.493.262-.733.262-1.36.183-1.493-.079-.131-.29-.21-.603-.367z" />
@@ -180,9 +179,23 @@ export const Landing: React.FC = () => {
             Administra partidas de una o múltiples mesas de forma profesional. Sorteo de asientos, balanceo automático, reloj de ciegas dinámico y proyección completa para TV con voz inteligente.
           </p>
 
-          {/* Optimized Interface Mockup */}
+          {/* Optimized Interface Mockup (Video) */}
           <div style={styles.mockupContainer}>
-            <img src={landingImg} alt="Poker App Interface" style={styles.mockupImage} />
+            <video 
+              src="/video_landing.mp4"
+              autoPlay 
+              loop 
+              muted 
+              playsInline 
+              style={{
+                width: '100%',
+                height: 'auto',
+                borderRadius: '10px',
+                display: 'block',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)'
+              }}
+            />
             <div style={styles.mockupGlow}></div>
           </div>
         </div>

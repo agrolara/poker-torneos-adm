@@ -515,3 +515,38 @@ input:checked + .slider:before {
     justify-content: center !important;
   }
 }
+
+/* Premium WhatsApp Pulse Button */
+@keyframes pulseGreen {
+  0% {
+    box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(37, 211, 102, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(37, 211, 102, 0);
+  }
+}
+
+.whatsapp-premium-btn {
+  background: linear-gradient(135deg, #25D366 0%, #128C7E 100%) !important;
+  color: #000000 !important;
+  box-shadow: 0 4px 14px 0 rgba(37, 211, 102, 0.3) !important;
+  animation: pulseGreen 2s infinite;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 750;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.whatsapp-premium-btn:hover {
+  transform: translateY(-1px) scale(1.03);
+  box-shadow: 0 6px 20px 0 rgba(37, 211, 102, 0.5) !important;
+  filter: brightness(1.1);
+}
