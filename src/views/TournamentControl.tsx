@@ -26,6 +26,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const lastWarnedMinuteLevelRef = useRef<number>(-1);
+  const isFirstLoadRef = useRef(true);
 
   useEffect(() => {
     // Initialize Sync channel
@@ -109,9 +110,12 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       
       if (tData) {
         setTournament(tData);
-        setSecondsRemaining(tData.seconds_remaining);
-        setIsRunning(tData.is_timer_running);
-        setCurrentLevelIdx(tData.current_level_index);
+        if (isFirstLoadRef.current) {
+          setSecondsRemaining(tData.seconds_remaining);
+          setIsRunning(tData.is_timer_running);
+          setCurrentLevelIdx(tData.current_level_index);
+          isFirstLoadRef.current = false;
+        }
       }
 
       // Fetch participants
