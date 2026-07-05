@@ -550,3 +550,23 @@ input:checked + .slider:before {
   box-shadow: 0 6px 20px 0 rgba(37, 211, 102, 0.5) !important;
   filter: brightness(1.1);
 }
+
+/* Subtle background logo watermark */
+.app-watermark {
+  position: fixed;
+  top: 55%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 45vw;
+  height: 45vw;
+  max-width: 600px;
+  max-height: 600px;
+  background-image: url('/logo.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.015; /* Extremely subtle watermark */
+  pointer-events: none;
+  z-index: 0;
+  user-select: none;
+}
