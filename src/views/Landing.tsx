@@ -1,105 +1,124 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabaseClient';
-import { ChevronRight, Zap, Key, Eye, EyeOff } from 'lucide-react';
+import { Zap, Key, Eye, EyeOff, Shield, Tv, Users, Landmark, Award, ArrowRight, LogIn } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import landingImg from '../assets/landing.png';
 
 export const Landing: React.FC = () => {
   const { signIn, signUp } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [leagueCode, setLeagueCode] = useState('');
   
   // Modal states for "Acceso a tu liga"
   const [showLeagueModal, setShowLeagueModal] = useState(false);
-  const [modalCode, setModalCode] = useState('');
-  const [modalError, setModalError] = useState('');
-  const [modalSuccess, setModalSuccess] = useState('');
-  const [verifyingCode, setVerifyingCode] = useState(false);
+  const [modalTab, setModalTab] = useState<'code' | 'login'>('code'); // 'code' for Register, 'login' for Login
+  
+  // Registration form states
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regCode, setRegCode] = useState('');
+  const [regError, setRegError] = useState('');
+  const [regSuccess, setRegSuccess] = useState('');
+  const [regLoading, setRegLoading] = useState(false);
 
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  // Login form states
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
   const [showPassword, setShowPassword] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
+  // Google OAuth for Super Admin
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
     try {
-      if (isLogin) {
-        const { error: err } = await signIn(email, password);
-        if (err) setError(err.message || 'Error al iniciar sesión. Verifica tus datos.');
-      } else {
-        if (!name.trim()) {
-          setError('El nombre del organizador es requerido');
-          setLoading(false);
-          return;
+      const { error: err } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
         }
-        if (!leagueCode.trim()) {
-          setError('Se requiere un Código de Liga para registrarse.');
-          setLoading(false);
-          return;
-        }
-        const { error: err } = await signUp(email, password, name, leagueCode);
-        if (err) setError(err.message || 'Error al registrarse.');
+      });
+      if (err) {
+        alert('Error al iniciar sesión con Google: ' + err.message);
       }
-    } catch (err) {
-      setError('Ocurrió un error inesperado');
+    } catch (e) {
+      console.error(e);
     } finally {
-      setLoading(false);
+      setGoogleLoading(false);
     }
   };
 
-  const handleVerifyModalCode = async (e: React.FormEvent) => {
+  // Handle Client Registration with code
+  const handleRegisterWithCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    setModalError('');
-    setModalSuccess('');
-    setVerifyingCode(true);
+    setRegError('');
+    setRegSuccess('');
+    setRegLoading(true);
 
-    if (!modalCode.trim()) {
-      setModalError('Por favor ingresa un código.');
-      setVerifyingCode(false);
+    if (!regName.trim()) {
+      setRegError('El nombre del organizador es requerido');
+      setRegLoading(false);
+      return;
+    }
+    if (!regCode.trim()) {
+      setRegError('Se requiere un Código de Liga válido.');
+      setRegLoading(false);
       return;
     }
 
     try {
-      const { data, error: queryErr } = await supabase
-        .from('league_codes')
-        .select('*')
-        .eq('code', modalCode.trim().toUpperCase())
-        .is('used_by', null)
-        .single();
-
-      if (queryErr || !data) {
-        setModalError('Código no válido, expirado o ya utilizado.');
+      const { error: err } = await signUp(regEmail, regPassword, regName, regCode);
+      if (err) {
+        setRegError(err.message || 'Error al registrarse. Revisa tu código o datos.');
       } else {
-        setModalSuccess('¡Código verificado con éxito! Redirigiendo...');
-        setLeagueCode(modalCode.trim().toUpperCase());
+        setRegSuccess('¡Cuenta de organizador creada con éxito! Redirigiendo...');
         setTimeout(() => {
-          setIsLogin(false); // Switch to registration form
           setShowLeagueModal(false);
-          setModalSuccess('');
-          setModalCode('');
+          setRegSuccess('');
         }, 1500);
       }
     } catch (err) {
-      setModalError('Error al conectar con el servidor.');
+      setRegError('Ocurrió un error inesperado');
     } finally {
-      setVerifyingCode(false);
+      setRegLoading(false);
+    }
+  };
+
+  // Handle Client Login
+  const handleClientLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    setLoginLoading(true);
+
+    try {
+      const { error: err } = await signIn(loginEmail, loginPassword);
+      if (err) {
+        setLoginError(err.message || 'Credenciales incorrectas.');
+      } else {
+        setShowLeagueModal(false);
+      }
+    } catch (err) {
+      setLoginError('Ocurrió un error inesperado');
+    } finally {
+      setLoginLoading(false);
     }
   };
 
   return (
     <div style={styles.container}>
+      {/* Floating Poker Suits with subtle motion */}
+      <div className="poker-suit spade">♠</div>
+      <div className="poker-suit heart">♥</div>
+      <div className="poker-suit club">♣</div>
+      <div className="poker-suit diamond">♦</div>
+
       {/* Background glow effects */}
       <div style={styles.glow1}></div>
       <div style={styles.glow2}></div>
 
-      {/* Header section with Logo & WhatsApp link */}
+      {/* Header section with Logo, OAuth, and Action Buttons */}
       <header style={styles.header}>
         <div style={styles.logoWrapper}>
           <img src={logoImg} alt="Logo" style={styles.logo} />
@@ -108,10 +127,20 @@ export const Landing: React.FC = () => {
         <div style={styles.headerActions}>
           <button 
             className="btn btn-outline" 
+            style={styles.adminBtn}
+            onClick={handleGoogleSignIn}
+            disabled={googleLoading}
+          >
+            <Shield size={15} style={{ marginRight: '6px', color: '#f59e0b' }} />
+            {googleLoading ? 'Cargando...' : 'Acceso Super Admin'}
+          </button>
+
+          <button 
+            className="btn btn-outline" 
             style={styles.ligaBtn}
             onClick={() => setShowLeagueModal(true)}
           >
-            <Key size={16} style={{ marginRight: '6px' }} />
+            <Key size={15} style={{ marginRight: '6px' }} />
             Acceso a tu liga
           </button>
           
@@ -129,12 +158,12 @@ export const Landing: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Grid: Left copy & image, Right form */}
+      {/* Main Grid: Left copy & showcase image, Right Features Showcase */}
       <div style={styles.heroSection}>
         <div style={styles.leftColumn}>
           <div style={styles.badge}>
             <Zap size={14} color="#f59e0b" />
-            <span>ACCESO EXCLUSIVO A LIGAS</span>
+            <span>PLATAFORMA PÓKER SAAS PROFESIONAL</span>
           </div>
           <h1 style={styles.title}>
             Lleva tus Torneos al <br />
@@ -145,172 +174,255 @@ export const Landing: React.FC = () => {
             Administra partidas de una o múltiples mesas de forma profesional. Sorteo de asientos, balanceo automático, reloj de ciegas dinámico y proyección completa para TV con voz inteligente.
           </p>
 
-          {/* User Image Mockup */}
+          {/* Optimized Interface Mockup */}
           <div style={styles.mockupContainer}>
             <img src={landingImg} alt="Poker App Interface" style={styles.mockupImage} />
             <div style={styles.mockupGlow}></div>
           </div>
         </div>
 
-        {/* Right column: login / register */}
+        {/* Right column: replace login form with App Functions/Features list */}
         <div style={styles.rightColumn}>
-          <div className="glass-panel" style={styles.loginCard}>
-            <div style={styles.cardHeader}>
-              <h2 style={styles.cardTitle}>{isLogin ? 'Iniciar Sesión' : 'Crear Cuenta'}</h2>
-              <p style={styles.cardSubtitle}>
-                {isLogin ? 'Ingresa para gestionar tus torneos' : 'Registra tu club y empieza a jugar'}
+          <div className="glass-panel" style={styles.featuresCard}>
+            <div style={styles.featuresCardHeader}>
+              <h2 style={styles.featuresCardTitle}>Funcionalidades Clave</h2>
+              <p style={styles.featuresCardSubtitle}>
+                Todo lo que necesitas para dirigir torneos de póker profesionales y organizar tus ligas en un solo lugar.
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} style={styles.form}>
-              {error && <div style={styles.errorAlert}>{error}</div>}
-
-              {!isLogin && (
-                <>
-                  <div className="form-group">
-                    <label className="form-label">Nombre del Organizador</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Ej. Club de Póker Lara"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Código de Liga / Invitación</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      style={styles.codeHighlight}
-                      placeholder="Ej. LIGA-XXXXXX"
-                      value={leagueCode}
-                      onChange={(e) => setLeagueCode(e.target.value.toUpperCase())}
-                      required
-                    />
-                    <small style={styles.inputHelp}>
-                      Se requiere un código exclusivo generado por el administrador para registrarse.
-                    </small>
-                  </div>
-                </>
-              )}
-
-              <div className="form-group">
-                <label className="form-label">Correo Electrónico</label>
-                <input
-                  type="email"
-                  className="form-input"
-                  placeholder="organizador@poker.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Contraseña</label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    className="form-input"
-                    placeholder="••••••••"
-                    style={{ paddingRight: '40px' }}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                  <button 
-                    type="button" 
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={styles.passwordToggle}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+            <div style={styles.featuresList}>
+              <div className="feature-item" style={styles.featureItem}>
+                <div style={{ ...styles.iconWrapper, backgroundColor: 'rgba(16, 185, 129, 0.1)' }}>
+                  <Tv size={20} color="var(--color-primary)" />
+                </div>
+                <div>
+                  <h4 style={styles.featureTitle}>Reloj de Ciegas en TV</h4>
+                  <p style={styles.featureDesc}>Pantalla completa optimizada para pantallas con avisos de voz configurables.</p>
                 </div>
               </div>
 
-              <button
-                type="submit"
-                className="btn btn-primary"
-                style={styles.submitBtn}
-                disabled={loading}
-              >
-                {loading ? 'Procesando...' : isLogin ? 'Ingresar a la Plataforma' : 'Registrar Cuenta'}
-                <ChevronRight size={18} />
-              </button>
-            </form>
+              <div className="feature-item" style={styles.featureItem}>
+                <div style={{ ...styles.iconWrapper, backgroundColor: 'rgba(99, 102, 241, 0.1)' }}>
+                  <Users size={20} color="var(--color-accent)" />
+                </div>
+                <div>
+                  <h4 style={styles.featureTitle}>Balanceo Automático</h4>
+                  <p style={styles.featureDesc}>Algoritmo inteligente para redistribución de mesas y asientos al eliminarse jugadores.</p>
+                </div>
+              </div>
 
-            <div style={styles.cardFooter}>
-              <span>{isLogin ? '¿Tienes un código de liga?' : '¿Ya tienes una cuenta?'}</span>
-              <button
-                onClick={() => {
-                  if (isLogin) {
-                    setIsLogin(false);
-                  } else {
-                    setIsLogin(true);
-                  }
-                  setError('');
-                }}
-                style={styles.toggleBtn}
-              >
-                {isLogin ? 'Regístrate aquí' : 'Inicia sesión'}
-              </button>
+              <div className="feature-item" style={styles.featureItem}>
+                <div style={{ ...styles.iconWrapper, backgroundColor: 'rgba(245, 158, 11, 0.1)' }}>
+                  <Landmark size={20} color="var(--color-secondary)" />
+                </div>
+                <div>
+                  <h4 style={styles.featureTitle}>Control de Recompras y Premios</h4>
+                  <p style={styles.featureDesc}>Gestión financiera del torneo: registro de rebuys, add-ons y división de bolsa total.</p>
+                </div>
+              </div>
+
+              <div className="feature-item" style={styles.featureItem}>
+                <div style={{ ...styles.iconWrapper, backgroundColor: 'rgba(239, 68, 68, 0.1)' }}>
+                  <Award size={20} color="#ef4444" />
+                </div>
+                <div>
+                  <h4 style={styles.featureTitle}>Ranking de Ligas y Líderes</h4>
+                  <p style={styles.featureDesc}>Historial acumulativo para premiar la constancia de los jugadores de tu club.</p>
+                </div>
+              </div>
             </div>
+
+            <button 
+              className="btn btn-primary" 
+              style={styles.startBtn}
+              onClick={() => {
+                setModalTab('code');
+                setShowLeagueModal(true);
+              }}
+            >
+              Comenzar ahora
+              <ArrowRight size={18} style={{ marginLeft: '6px' }} />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Code validation modal */}
+      {/* Acceso a tu liga Modal (Tabs for register code vs login) */}
       {showLeagueModal && (
         <div style={styles.modalOverlay}>
           <div className="glass-panel" style={styles.modalContent}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>Acceso a tu Liga</h3>
-              <p style={styles.modalSubtitle}>Ingresa el código exclusivo para activar tu cuenta de organizador.</p>
-            </div>
-            
-            <form onSubmit={handleVerifyModalCode} style={styles.modalForm}>
-              {modalError && <div style={styles.errorAlert}>{modalError}</div>}
-              {modalSuccess && <div style={styles.successAlert}>{modalSuccess}</div>}
-              
-              <div className="form-group">
-                <label className="form-label">Código Único de Liga</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  style={styles.modalInput}
-                  placeholder="LIGA-XXXXXX"
-                  value={modalCode}
-                  onChange={(e) => setModalCode(e.target.value.toUpperCase())}
-                  autoFocus
-                  required
-                />
-              </div>
+            {/* Modal Close Button */}
+            <button 
+              type="button" 
+              onClick={() => {
+                setShowLeagueModal(false);
+                setRegError('');
+                setRegSuccess('');
+                setLoginError('');
+              }}
+              style={styles.modalCloseX}
+            >
+              &times;
+            </button>
 
-              <div style={styles.modalActions}>
-                <button 
-                  type="button" 
-                  className="btn btn-outline" 
-                  onClick={() => {
-                    setShowLeagueModal(false);
-                    setModalError('');
-                    setModalSuccess('');
-                  }}
-                  disabled={verifyingCode}
-                >
-                  Cancelar
-                </button>
+            {/* Modal Tabs */}
+            <div style={styles.modalTabs}>
+              <button 
+                style={{
+                  ...styles.modalTabBtn,
+                  borderBottom: modalTab === 'code' ? '2px solid #f59e0b' : 'none',
+                  color: modalTab === 'code' ? '#ffffff' : 'var(--color-text-muted)',
+                }}
+                onClick={() => setModalTab('code')}
+              >
+                <Key size={16} style={{ marginRight: '6px' }} />
+                Registrarse con Código
+              </button>
+              <button 
+                style={{
+                  ...styles.modalTabBtn,
+                  borderBottom: modalTab === 'login' ? '2px solid #f59e0b' : 'none',
+                  color: modalTab === 'login' ? '#ffffff' : 'var(--color-text-muted)',
+                }}
+                onClick={() => setModalTab('login')}
+              >
+                <LogIn size={16} style={{ marginRight: '6px' }} />
+                Iniciar Sesión
+              </button>
+            </div>
+
+            {/* TAB: Register with Code */}
+            {modalTab === 'code' && (
+              <form onSubmit={handleRegisterWithCode} style={styles.modalForm}>
+                <h3 style={styles.modalTitle}>Acceso con Código</h3>
+                <p style={styles.modalSubtitle}>Crea tu cuenta de organizador ingresando el código único provisto por el Super Administrador.</p>
+                
+                {regError && <div style={styles.errorAlert}>{regError}</div>}
+                {regSuccess && <div style={styles.successAlert}>{regSuccess}</div>}
+                
+                <div className="form-group">
+                  <label className="form-label">Código de Liga / Invitación</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    style={styles.modalCodeInput}
+                    placeholder="LIGA-XXXXXX"
+                    value={regCode}
+                    onChange={(e) => setRegCode(e.target.value.toUpperCase())}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Nombre del Organizador</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Ej. Club de Póker Lara"
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Correo Electrónico</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    placeholder="correo@servidor.com"
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Contraseña</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      className="form-input"
+                      placeholder="••••••••"
+                      style={{ paddingRight: '40px' }}
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      required
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={styles.passwordToggle}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
                 <button 
                   type="submit" 
                   className="btn btn-primary" 
-                  disabled={verifyingCode}
+                  style={styles.submitBtn}
+                  disabled={regLoading}
                 >
-                  {verifyingCode ? 'Verificando...' : 'Verificar e Ingresar'}
+                  {regLoading ? 'Registrando...' : 'Registrar Cuenta de Liga'}
                 </button>
-              </div>
-            </form>
+              </form>
+            )}
+
+            {/* TAB: Standard Login */}
+            {modalTab === 'login' && (
+              <form onSubmit={handleClientLogin} style={styles.modalForm}>
+                <h3 style={styles.modalTitle}>Iniciar Sesión</h3>
+                <p style={styles.modalSubtitle}>Ingresa tus credenciales de organizador para administrar tus torneos en curso.</p>
+                
+                {loginError && <div style={styles.errorAlert}>{loginError}</div>}
+                
+                <div className="form-group">
+                  <label className="form-label">Correo Electrónico</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    placeholder="organizador@poker.com"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Contraseña</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      className="form-input"
+                      placeholder="••••••••"
+                      style={{ paddingRight: '40px' }}
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      required
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={styles.passwordToggle}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  style={styles.submitBtn}
+                  disabled={loginLoading}
+                >
+                  {loginLoading ? 'Ingresando...' : 'Iniciar Sesión'}
+                </button>
+              </form>
+            )}
           </div>
         </div>
       )}
@@ -338,6 +450,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative',
     zIndex: 1,
     fontFamily: 'Space Grotesk, sans-serif',
+    overflow: 'hidden',
   },
   glow1: {
     position: 'absolute',
@@ -365,6 +478,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     padding: '15px 0',
     borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+    zIndex: 10,
+    position: 'relative',
   },
   logoWrapper: {
     display: 'flex',
@@ -388,6 +503,16 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '16px',
+  },
+  adminBtn: {
+    padding: '8px 16px',
+    fontSize: '0.85rem',
+    fontWeight: 700,
+    borderRadius: '8px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    background: 'rgba(245, 158, 11, 0.02)',
   },
   ligaBtn: {
     padding: '8px 18px',
@@ -420,6 +545,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '50px',
     alignItems: 'center',
     margin: '40px 0',
+    zIndex: 2,
   },
   leftColumn: {
     display: 'flex',
@@ -482,55 +608,166 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     justifyContent: 'center',
   },
-  loginCard: {
+  featuresCard: {
     width: '100%',
     maxWidth: '430px',
     padding: '40px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '24px',
+    gap: '28px',
     border: '1px solid rgba(197, 168, 128, 0.12)',
     background: 'rgba(15, 23, 42, 0.45)',
   },
-  cardHeader: {
+  featuresCardHeader: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '6px',
+    gap: '8px',
   },
-  cardTitle: {
+  featuresCardTitle: {
     fontSize: '1.7rem',
     fontWeight: 700,
     color: '#ffffff',
   },
-  cardSubtitle: {
+  featuresCardSubtitle: {
     fontSize: '0.88rem',
     color: 'var(--color-text-secondary)',
+    lineHeight: 1.4,
   },
-  form: {
+  featuresList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px',
+  },
+  featureItem: {
+    display: 'flex',
+    gap: '16px',
+    alignItems: 'flex-start',
+  },
+  iconWrapper: {
+    padding: '10px',
+    borderRadius: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  featureTitle: {
+    fontSize: '1rem',
+    fontWeight: 700,
+    color: '#ffffff',
+    marginBottom: '4px',
+  },
+  featureDesc: {
+    fontSize: '0.82rem',
+    color: 'var(--color-text-secondary)',
+    lineHeight: 1.4,
+  },
+  startBtn: {
+    width: '100%',
+    padding: '14px',
+    fontWeight: 750,
+    background: 'linear-gradient(135deg, #c5a880 0%, #f59e0b 100%)',
+    border: 'none',
+    color: '#000000',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '8px',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backdropFilter: 'blur(8px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+    padding: '20px',
+  },
+  modalContent: {
+    maxWidth: '460px',
+    width: '100%',
+    padding: '40px',
+    border: '1px solid rgba(197, 168, 128, 0.2)',
+    background: '#0a0f1d',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '24px',
+    position: 'relative',
+  },
+  modalCloseX: {
+    position: 'absolute',
+    top: '16px',
+    right: '16px',
+    background: 'none',
+    border: 'none',
+    fontSize: '1.8rem',
+    color: 'var(--color-text-muted)',
+    cursor: 'pointer',
+  },
+  modalTabs: {
+    display: 'flex',
+    borderBottom: '1px solid rgba(255,255,255,0.08)',
+    paddingBottom: '8px',
+    gap: '16px',
+  },
+  modalTabBtn: {
+    background: 'none',
+    border: 'none',
+    padding: '8px 4px',
+    fontSize: '0.9rem',
+    fontWeight: 700,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+  },
+  modalForm: {
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
   },
-  codeHighlight: {
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-    backgroundColor: 'rgba(245, 158, 11, 0.02)',
+  modalTitle: {
+    fontSize: '1.5rem',
     fontWeight: 700,
-    letterSpacing: '0.05em',
+    color: '#ffffff',
+    margin: 0,
   },
-  inputHelp: {
-    fontSize: '0.75rem',
-    color: 'var(--color-text-muted)',
-    marginTop: '4px',
-    display: 'block',
+  modalSubtitle: {
+    fontSize: '0.85rem',
+    color: 'var(--color-text-secondary)',
+    lineHeight: 1.45,
+    margin: 0,
+  },
+  modalCodeInput: {
+    textAlign: 'center',
+    fontSize: '1.3rem',
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    backgroundColor: 'rgba(245, 158, 11, 0.01)',
+    color: '#ffffff',
   },
   submitBtn: {
     width: '100%',
     padding: '14px',
-    marginTop: '10px',
     fontWeight: 700,
     background: 'linear-gradient(135deg, #c5a880 0%, #f59e0b 100%)',
     border: 'none',
     color: '#000000',
+    marginTop: '10px',
+  },
+  passwordToggle: {
+    position: 'absolute',
+    top: '50%',
+    right: '12px',
+    transform: 'translateY(-50%)',
+    background: 'none',
+    border: 'none',
+    color: 'var(--color-text-muted)',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
   },
   errorAlert: {
     padding: '12px 16px',
@@ -550,89 +787,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.85rem',
     fontWeight: 500,
   },
-  cardFooter: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-    fontSize: '0.85rem',
-    color: 'var(--color-text-muted)',
-  },
-  toggleBtn: {
-    background: 'none',
-    border: 'none',
-    color: '#f59e0b',
-    fontWeight: 700,
-    cursor: 'pointer',
-    textDecoration: 'underline',
-  },
-  passwordToggle: {
-    position: 'absolute',
-    top: '50%',
-    right: '12px',
-    transform: 'translateY(-50%)',
-    background: 'none',
-    border: 'none',
-    color: 'var(--color-text-muted)',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    inset: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    backdropFilter: 'blur(8px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999,
-    padding: '20px',
-  },
-  modalContent: {
-    maxWidth: '450px',
-    width: '100%',
-    padding: '35px',
-    border: '1px solid rgba(197, 168, 128, 0.2)',
-    background: '#0a0f1d',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px',
-  },
-  modalHeader: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  modalTitle: {
-    fontSize: '1.5rem',
-    fontWeight: 700,
-    color: '#ffffff',
-  },
-  modalSubtitle: {
-    fontSize: '0.85rem',
-    color: 'var(--color-text-secondary)',
-    lineHeight: 1.4,
-  },
-  modalForm: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  modalInput: {
-    textAlign: 'center',
-    fontSize: '1.3rem',
-    fontWeight: 700,
-    letterSpacing: '0.1em',
-    borderColor: 'rgba(197, 168, 128, 0.3)',
-    color: '#ffffff',
-  },
-  modalActions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '12px',
-    marginTop: '10px',
-  },
   footer: {
     marginTop: '60px',
     padding: '25px 0',
@@ -644,6 +798,8 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--color-text-muted)',
     flexWrap: 'wrap',
     gap: '16px',
+    zIndex: 10,
+    position: 'relative',
   },
   footerText: {
     margin: 0,

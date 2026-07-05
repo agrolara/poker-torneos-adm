@@ -283,3 +283,52 @@ input:focus + .slider {
 input:checked + .slider:before {
   transform: translateX(24px);
 }
+
+/* Floating Poker Suits in Background */
+@keyframes floatSlow1 {
+  0% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-30px) rotate(10deg); }
+  100% { transform: translateY(0px) rotate(0deg); }
+}
+
+@keyframes floatSlow2 {
+  0% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(30px) rotate(-15deg); }
+  100% { transform: translateY(0px) rotate(0deg); }
+}
+
+.poker-suit {
+  position: absolute;
+  font-size: 8rem;
+  color: #c5a880;
+  opacity: 0.025;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+
+.spade {
+  top: 15%;
+  left: 10%;
+  animation: floatSlow1 14s ease-in-out infinite;
+}
+
+.heart {
+  top: 40%;
+  right: 12%;
+  animation: floatSlow2 18s ease-in-out infinite;
+  color: #ef4444;
+}
+
+.club {
+  bottom: 20%;
+  left: 15%;
+  animation: floatSlow2 16s ease-in-out infinite;
+}
+
+.diamond {
+  bottom: 15%;
+  right: 30%;
+  animation: floatSlow1 20s ease-in-out infinite;
+  color: #ef4444;
+}
