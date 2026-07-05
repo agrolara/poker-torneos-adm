@@ -18,6 +18,18 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   // Timer state (local replica for speed)
   const [secondsRemaining, setSecondsRemaining] = useState(initialTournament.seconds_remaining);
   const [isRunning, setIsRunning] = useState(initialTournament.is_timer_running);
+  const [controlViewMode, setControlViewMode] = useState<'list' | 'visual'>('visual');
+
+  const getSeatPosition = (seatIndex: number, totalSeats: number) => {
+    // Offset by -90 degrees so seat 1 is at the top center
+    const angle = (seatIndex * (360 / totalSeats) - 90) * (Math.PI / 180);
+    // Oval radius
+    const rx = 40; // horizontal radius in %
+    const ry = 33; // vertical radius in %
+    const x = 50 + rx * Math.cos(angle);
+    const y = 50 + ry * Math.sin(angle);
+    return { left: `${x}%`, top: `${y}%` };
+  };
   const [currentLevelIdx, setCurrentLevelIdx] = useState(initialTournament.current_level_index);
   
   // Seating balancing recommendation
@@ -646,6 +658,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   const activeLevel = getCurrentLevel();
   const nextLevel = getNextLevel();
   const activePlayers = players.filter(p => p.status === 'active');
+  const activeTableNumbers = Array.from(new Set(activePlayers.filter(p => p.table_number !== null).map(p => p.table_number as number))).sort((a,b) => a-b);
   const { prizePool, payouts } = calculateFinancials();
 
   if (loading && !structure) {
@@ -790,113 +803,221 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
         <div className="glass-panel" style={styles.rightColumn}>
           <div style={styles.playersHeader}>
             <h3 style={styles.subTitle}><Users size={18} /> Jugadores Activos ({activePlayers.length})</h3>
-            <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={fetchTournamentData}>
-              Actualizar <RefreshCw size={14} />
-            </button>
+            
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.02)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                <button 
+                  className="btn" 
+                  style={{ 
+                    padding: '4px 10px', 
+                    fontSize: '0.75rem', 
+                    borderRadius: '4px',
+                    background: controlViewMode === 'visual' ? 'var(--color-primary)' : 'transparent',
+                    color: controlViewMode === 'visual' ? '#000000' : 'var(--color-text-secondary)',
+                    border: 'none',
+                    margin: 0
+                  }}
+                  onClick={() => setControlViewMode('visual')}
+                >
+                  Mesas Visual
+                </button>
+                <button 
+                  className="btn" 
+                  style={{ 
+                    padding: '4px 10px', 
+                    fontSize: '0.75rem', 
+                    borderRadius: '4px',
+                    background: controlViewMode === 'list' ? 'var(--color-primary)' : 'transparent',
+                    color: controlViewMode === 'list' ? '#000000' : 'var(--color-text-secondary)',
+                    border: 'none',
+                    margin: 0
+                  }}
+                  onClick={() => setControlViewMode('list')}
+                >
+                  Lista
+                </button>
+              </div>
+              <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={fetchTournamentData}>
+                Actualizar <RefreshCw size={14} />
+              </button>
+            </div>
           </div>
 
-          <div style={styles.tableScroll}>
-            <table style={styles.table}>
-              <thead>
-                <tr style={styles.tableHeaderRow}>
-                  <th style={styles.th}>Jugador</th>
-                  <th style={styles.th}>Mesa / Asiento</th>
-                  <th style={styles.th}>Recompras</th>
-                  <th style={styles.th}>Add-On</th>
-                  <th style={{ ...styles.th, textAlign: 'right' }}>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {players.map((p) => {
-                  const isActive = p.status === 'active';
-                  return (
-                    <tr key={p.id} style={{ ...styles.tr, opacity: isActive ? 1 : 0.5 }}>
-                      <td style={styles.td}>
-                        <div style={styles.playerNameCol}>
-                          <span style={{ fontWeight: isActive ? 700 : 400 }}>{getPlayerName(p)}</span>
-                          {!isActive && <span style={styles.eliminatedTag}>Eliminado</span>}
+          {controlViewMode === 'visual' ? (
+            <div style={styles.tablesVisualContainer}>
+              {activeTableNumbers.map((tableNum) => {
+                const playersAtTable = activePlayers.filter(p => p.table_number === tableNum);
+                
+                return (
+                  <div key={tableNum} style={styles.tableCard}>
+                    <div style={styles.tableCardHeader}>
+                      <h4 style={styles.tableTitle}>Mesa {tableNum}</h4>
+                      <span style={styles.tableCountLabel}>{playersAtTable.length} Jugadores</span>
+                    </div>
+
+                    {/* Visual Table Wrapper */}
+                    <div style={styles.visualTableWrapper}>
+                      {/* Felt shape */}
+                      <div style={styles.tableFelt}>
+                        <div style={styles.feltCenter}>
+                          <span style={styles.feltLabel}>Poker Director</span>
+                          <span style={styles.feltSub}>Mesa {tableNum}</span>
                         </div>
-                      </td>
-                      <td style={styles.td}>
-                        {isActive ? (
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <select 
-                              value={p.table_number || ''} 
-                              onChange={(e) => handleMovePlayerTable(p.id, Number(e.target.value))}
-                              className="form-input"
-                              style={{ padding: '4px 8px', fontSize: '0.8rem', width: '90px', background: 'rgba(3,7,18,0.4)', margin: 0 }}
-                            >
-                              {Array.from({ length: Math.ceil(players.filter(pl => pl.status === 'active').length / tournament.max_players_per_table) }).map((_, i) => (
-                                <option key={i+1} value={i+1}>Mesa {i+1}</option>
-                              ))}
-                            </select>
-                            <select 
-                              value={p.seat_number || ''} 
-                              onChange={(e) => handleMovePlayerSeat(p.id, Number(e.target.value))}
-                              className="form-input"
-                              style={{ padding: '4px 8px', fontSize: '0.8rem', width: '80px', background: 'rgba(3,7,18,0.4)', margin: 0 }}
-                            >
-                              {Array.from({ length: tournament.max_players_per_table }).map((_, i) => (
-                                <option key={i+1} value={i+1}>Silla {i+1}</option>
-                              ))}
-                            </select>
+                      </div>
+
+                      {/* Seats */}
+                      {Array.from({ length: tournament.max_players_per_table }).map((_, seatIdx) => {
+                        const seatNum = seatIdx + 1;
+                        const player = playersAtTable.find(p => p.seat_number === seatNum);
+                        const pos = getSeatPosition(seatIdx, tournament.max_players_per_table);
+
+                        return (
+                          <div 
+                            key={seatNum} 
+                            style={{
+                              ...styles.seatNode,
+                              ...pos,
+                            }}
+                          >
+                            {player ? (
+                              <div 
+                                style={styles.seatActive}
+                                onClick={() => handleAddPlayerAction(player, 'eliminate')}
+                                title={`Asiento ${seatNum}: ${getPlayerName(player)} (Haz clic para acciones)`}
+                              >
+                                <div style={styles.seatAvatar}>
+                                  {getPlayerName(player).substring(0, 2).toUpperCase()}
+                                </div>
+                                <div style={styles.seatNameBadge}>
+                                  <span style={styles.seatPlayerName}>{getPlayerName(player)}</span>
+                                  {player.rebuys_count > 0 && (
+                                    <span style={styles.seatRebuys}>R:{player.rebuys_count}</span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={styles.seatEmpty} title={`Asiento ${seatNum}: Vacío`}>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{seatNum}</span>
+                              </div>
+                            )}
                           </div>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td style={styles.td}>
-                        {p.rebuys_count}
-                      </td>
-                      <td style={styles.td}>
-                        {p.has_add_on ? (
-                          <span style={{ color: 'var(--color-primary)', fontWeight: 700 }}>SÍ</span>
-                        ) : (
-                          'NO'
-                        )}
-                      </td>
-                      <td style={{ ...styles.td, textAlign: 'right' }}>
-                        {isActive && tournament.status !== 'completed' ? (
-                          <div style={styles.actions}>
-                            <button 
-                              className="btn btn-outline" 
-                              style={styles.actionBtnSmall}
-                              onClick={() => handleAddPlayerAction(p, 'rebuy')}
-                              title="Registrar Recompra"
-                            >
-                              Recompra
-                            </button>
-                            {!p.has_add_on && (
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {activeTableNumbers.length === 0 && (
+                <div style={styles.emptyState}>
+                  No hay mesas activas. Registra jugadores e inicia el torneo.
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={styles.tableScroll}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.tableHeaderRow}>
+                    <th style={styles.th}>Jugador</th>
+                    <th style={styles.th}>Mesa / Asiento</th>
+                    <th style={styles.th}>Recompras</th>
+                    <th style={styles.th}>Add-On</th>
+                    <th style={{ ...styles.th, textAlign: 'right' }}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {players.map((p) => {
+                    const isActive = p.status === 'active';
+                    return (
+                      <tr key={p.id} style={{ ...styles.tr, opacity: isActive ? 1 : 0.5 }}>
+                        <td style={styles.td}>
+                          <div style={styles.playerNameCol}>
+                            <span style={{ fontWeight: isActive ? 700 : 400 }}>{getPlayerName(p)}</span>
+                            {!isActive && <span style={styles.eliminatedTag}>Eliminado</span>}
+                          </div>
+                        </td>
+                        <td style={styles.td}>
+                          {isActive ? (
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <select 
+                                value={p.table_number || ''} 
+                                onChange={(e) => handleMovePlayerTable(p.id, Number(e.target.value))}
+                                className="form-input"
+                                style={{ padding: '4px 8px', fontSize: '0.8rem', width: '90px', background: 'rgba(3,7,18,0.4)', margin: 0 }}
+                              >
+                                {Array.from({ length: Math.ceil(players.filter(pl => pl.status === 'active').length / tournament.max_players_per_table) }).map((_, i) => (
+                                  <option key={i+1} value={i+1}>Mesa {i+1}</option>
+                                ))}
+                              </select>
+                              <select 
+                                value={p.seat_number || ''} 
+                                onChange={(e) => handleMovePlayerSeat(p.id, Number(e.target.value))}
+                                className="form-input"
+                                style={{ padding: '4px 8px', fontSize: '0.8rem', width: '80px', background: 'rgba(3,7,18,0.4)', margin: 0 }}
+                              >
+                                {Array.from({ length: tournament.max_players_per_table }).map((_, i) => (
+                                  <option key={i+1} value={i+1}>Silla {i+1}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        <td style={styles.td}>
+                          {p.rebuys_count}
+                        </td>
+                        <td style={styles.td}>
+                          {p.has_add_on ? (
+                            <span style={{ color: 'var(--color-primary)', fontWeight: 700 }}>SÍ</span>
+                          ) : (
+                            'NO'
+                          )}
+                        </td>
+                        <td style={{ ...styles.td, textAlign: 'right' }}>
+                          {isActive && tournament.status !== 'completed' ? (
+                            <div style={styles.actions}>
                               <button 
                                 className="btn btn-outline" 
                                 style={styles.actionBtnSmall}
-                                onClick={() => handleAddPlayerAction(p, 'addon')}
-                                title="Registrar Add-On"
+                                onClick={() => handleAddPlayerAction(p, 'rebuy')}
+                                title="Registrar Recompra"
                               >
-                                Add-On
+                                Recompra
                               </button>
-                            )}
-                            <button 
-                              className="btn btn-danger" 
-                              style={{ ...styles.actionBtnSmall, color: 'white' }}
-                              onClick={() => handleAddPlayerAction(p, 'eliminate')}
-                              title="Eliminar"
-                            >
-                              Eliminar
-                            </button>
-                          </div>
-                        ) : (
-                          <span style={styles.finishedLabel}>
-                            {p.elimination_position ? `${p.elimination_position}° Posición` : '-'}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                              {!p.has_add_on && (
+                                <button 
+                                  className="btn btn-outline" 
+                                  style={styles.actionBtnSmall}
+                                  onClick={() => handleAddPlayerAction(p, 'addon')}
+                                  title="Registrar Add-On"
+                                >
+                                  Add-On
+                                </button>
+                              )}
+                              <button 
+                                className="btn btn-danger" 
+                                style={{ ...styles.actionBtnSmall, color: 'white' }}
+                                onClick={() => handleAddPlayerAction(p, 'eliminate')}
+                                title="Eliminar"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          ) : (
+                            <span style={styles.finishedLabel}>
+                              {p.elimination_position ? `${p.elimination_position}° Posición` : '-'}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1258,5 +1379,142 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: '#dc2626',
     borderColor: '#dc2626',
     color: '#ffffff',
+  },
+  tablesVisualContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '30px',
+    marginTop: '10px',
+  },
+  tableCard: {
+    background: 'rgba(3, 7, 18, 0.25)',
+    border: '1px solid var(--border-color)',
+    borderRadius: 'var(--radius-lg)',
+    padding: '20px',
+  },
+  tableCardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '10px',
+  },
+  tableTitle: {
+    fontSize: '1.1rem',
+    fontWeight: 750,
+  },
+  tableCountLabel: {
+    fontSize: '0.8rem',
+    color: 'var(--color-primary)',
+    fontWeight: 700,
+    background: 'var(--color-primary-glow)',
+    padding: '3px 8px',
+    borderRadius: '100px',
+  },
+  visualTableWrapper: {
+    position: 'relative',
+    height: '240px',
+    width: '100%',
+    margin: '10px auto',
+  },
+  tableFelt: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: '62%',
+    height: '52%',
+    background: 'radial-gradient(ellipse at center, #064e3b 0%, #022c22 100%)',
+    border: '8px solid #1f2937',
+    borderRadius: '100px',
+    boxShadow: 'inset 0 0 15px rgba(0,0,0,0.6), 0 8px 20px rgba(0,0,0,0.4)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  feltCenter: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feltLabel: {
+    fontSize: '0.75rem',
+    fontWeight: 800,
+    color: '#ffffff',
+    opacity: 0.15,
+    textTransform: 'uppercase',
+    letterSpacing: '0.1em',
+  },
+  feltSub: {
+    fontSize: '0.65rem',
+    fontWeight: 700,
+    color: '#ffffff',
+    opacity: 0.1,
+  },
+  seatNode: {
+    position: 'absolute',
+    transform: 'translate(-50%, -50%)',
+    zIndex: 2,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  seatActive: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px',
+    cursor: 'pointer',
+    transition: 'transform 0.15s ease',
+  },
+  seatAvatar: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
+    color: '#000000',
+    fontWeight: 800,
+    fontSize: '0.8rem',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
+    border: '2px solid #ffffff',
+  },
+  seatNameBadge: {
+    background: 'rgba(3, 7, 18, 0.85)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '4px',
+    padding: '2px 6px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    whiteSpace: 'nowrap',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+    maxWidth: '85px',
+    overflow: 'hidden',
+  },
+  seatPlayerName: {
+    fontSize: '0.7rem',
+    fontWeight: 650,
+    color: '#ffffff',
+    textOverflow: 'ellipsis',
+    overflow: 'hidden',
+  },
+  seatRebuys: {
+    fontSize: '0.6rem',
+    fontWeight: 800,
+    color: 'var(--color-secondary)',
+  },
+  seatEmpty: {
+    width: '24px',
+    height: '24px',
+    borderRadius: '50%',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px dashed rgba(255,255,255,0.15)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 };
