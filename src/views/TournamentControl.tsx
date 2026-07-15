@@ -340,6 +340,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   };
 
   const handleAddPlayerAction = async (player: TournamentPlayer, type: 'rebuy' | 'addon' | 'eliminate') => {
+    if (tournament.status === 'completed') return;
     // For eliminations, show confirmation modal first
     if (type === 'eliminate') {
       setConfirmModal({ show: true, player, action: 'eliminate' });
@@ -389,6 +390,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   };
 
   const handleConfirmElimination = async () => {
+    if (tournament.status === 'completed') return;
     const player = confirmModal.player;
     if (!player) return;
     setConfirmModal({ show: false, player: null, action: '' });
@@ -434,6 +436,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   };
 
   const handleRestorePlayer = async (player: TournamentPlayer) => {
+    if (tournament.status === 'completed') return;
     try {
       // Find an empty seat on the table with the fewest players
       const activePs = players.filter(p => p.status === 'active');
@@ -637,6 +640,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   };
 
   const handleMergeTables = async () => {
+    if (tournament.status === 'completed') return;
     try {
       const active = players.filter(p => p.status === 'active');
       const tableCounts: Record<number, number> = {};
@@ -724,6 +728,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   };
 
   const handleMovePlayerTable = async (playerTournamentId: string, newTable: number) => {
+    if (tournament.status === 'completed') return;
     try {
       const { error } = await supabase
         .from('tournament_players')
@@ -738,6 +743,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   };
 
   const handleMovePlayerSeat = async (playerTournamentId: string, newSeat: number) => {
+    if (tournament.status === 'completed') return;
     try {
       const { error } = await supabase
         .from('tournament_players')
@@ -752,6 +758,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   };
 
   const handleAutoBalance = async () => {
+    if (tournament.status === 'completed') return;
     try {
       const activePlayers = players.filter(pl => pl.status === 'active');
       const tableCounts: Record<number, number> = {};
@@ -903,6 +910,10 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   const activeTableNumbers = Array.from(new Set(activePlayers.filter(p => p.table_number !== null).map(p => p.table_number as number))).sort((a,b) => a-b);
   const { prizePool, payouts } = calculateFinancials();
 
+  const sortedWinners = [...players]
+    .filter(p => p.elimination_position !== null)
+    .sort((a, b) => (a.elimination_position || 99) - (b.elimination_position || 99));
+
   if (loading && !structure) {
     return <div style={styles.loadingContainer}>Cargando centro de control del torneo...</div>;
   }
@@ -958,45 +969,86 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
         <div style={styles.leftColumn}>
           {/* Clock Display Card */}
           <div className="glass-panel" style={{ ...styles.clockCard, borderColor: isRunning ? 'var(--color-primary)' : 'var(--border-color)' }}>
-            <div style={styles.levelHeader}>NIVEL {activeLevel?.level || 1}</div>
-            
-            <div className="control-timer-display" style={styles.timerDisplay}>
-              {formatTime(secondsRemaining)}
-            </div>
+            {tournament.status === 'completed' ? (
+              <div style={styles.completedHeaderCard}>
+                <div style={styles.completedBadge}><Award size={20} color="#f59e0b" /> TORNEO CONCLUIDO</div>
+                
+                {/* Podium representation */}
+                <div style={styles.podiumContainer}>
+                  {/* 2nd Place */}
+                  {sortedWinners[1] && (
+                    <div style={styles.podiumStep2}>
+                      <div style={styles.podiumAvatar}>🥈</div>
+                      <div style={styles.podiumName}>{getPlayerName(sortedWinners[1])}</div>
+                      <div style={styles.podiumPrize}>${(sortedWinners[1].payout_amount || payouts[1] || 0).toLocaleString()}</div>
+                      <div style={styles.podiumLabel}>2° Puesto</div>
+                    </div>
+                  )}
 
-            <div style={styles.blindsDisplay}>
-              ${activeLevel?.small_blind || 0} / ${activeLevel?.big_blind || 0}
-              {activeLevel?.ante ? <span style={styles.anteLabel}> (Ante: ${activeLevel.ante})</span> : ''}
-            </div>
+                  {/* 1st Place */}
+                  {sortedWinners[0] && (
+                    <div style={styles.podiumStep1}>
+                      <div style={styles.podiumAvatarMain}>🏆</div>
+                      <div style={styles.podiumNameMain}>{getPlayerName(sortedWinners[0])}</div>
+                      <div style={styles.podiumPrizeMain}>${(sortedWinners[0].payout_amount || payouts[0] || 0).toLocaleString()}</div>
+                      <div style={styles.podiumLabelMain}>GANADOR</div>
+                    </div>
+                  )}
 
-            {/* Timer Controllers */}
-            <div style={styles.clockControllers}>
-              <button style={styles.controllerBtn} onClick={handleLevelDown} title="Nivel Anterior">
-                <Rewind size={20} />
-              </button>
-              
-              <button 
-                style={{ 
-                  ...styles.playBtn, 
-                  backgroundColor: isRunning ? 'var(--color-danger)' : 'var(--color-primary)',
-                  boxShadow: isRunning ? '0 0 15px rgba(239, 68, 68, 0.4)' : '0 0 15px rgba(16, 185, 129, 0.4)'
-                }} 
-                onClick={handlePlayPause}
-                title={isRunning ? 'Pausar' : 'Iniciar'}
-              >
-                {isRunning ? <Pause size={24} color="#ffffff" /> : <Play size={24} color="#030712" />}
-              </button>
-
-              <button style={styles.controllerBtn} onClick={handleLevelUp} title="Siguiente Nivel">
-                <FastForward size={20} />
-              </button>
-            </div>
-
-            {/* Next Level Info */}
-            {nextLevel && (
-              <div style={styles.nextLevelInfo}>
-                Siguiente Nivel: <span>${nextLevel.small_blind}/${nextLevel.big_blind}</span> (Ante: ${nextLevel.ante})
+                  {/* 3rd Place */}
+                  {sortedWinners[2] && (
+                    <div style={styles.podiumStep3}>
+                      <div style={styles.podiumAvatar}>🥉</div>
+                      <div style={styles.podiumName}>{getPlayerName(sortedWinners[2])}</div>
+                      <div style={styles.podiumPrize}>${(sortedWinners[2].payout_amount || payouts[2] || 0).toLocaleString()}</div>
+                      <div style={styles.podiumLabel}>3° Puesto</div>
+                    </div>
+                  )}
+                </div>
               </div>
+            ) : (
+              <>
+                <div style={styles.levelHeader}>NIVEL {activeLevel?.level || 1}</div>
+                
+                <div className="control-timer-display" style={styles.timerDisplay}>
+                  {formatTime(secondsRemaining)}
+                </div>
+
+                <div style={styles.blindsDisplay}>
+                  ${activeLevel?.small_blind || 0} / ${activeLevel?.big_blind || 0}
+                  {activeLevel?.ante ? <span style={styles.anteLabel}> (Ante: ${activeLevel.ante})</span> : ''}
+                </div>
+
+                {/* Timer Controllers */}
+                <div style={styles.clockControllers}>
+                  <button style={styles.controllerBtn} onClick={handleLevelDown} title="Nivel Anterior">
+                    <Rewind size={20} />
+                  </button>
+                  
+                  <button 
+                    style={{ 
+                      ...styles.playBtn, 
+                      backgroundColor: isRunning ? 'var(--color-danger)' : 'var(--color-primary)',
+                      boxShadow: isRunning ? '0 0 15px rgba(239, 68, 68, 0.4)' : '0 0 15px rgba(16, 185, 129, 0.4)'
+                    }} 
+                    onClick={handlePlayPause}
+                    title={isRunning ? 'Pausar' : 'Iniciar'}
+                  >
+                    {isRunning ? <Pause size={24} color="#ffffff" /> : <Play size={24} color="#030712" />}
+                  </button>
+
+                  <button style={styles.controllerBtn} onClick={handleLevelUp} title="Siguiente Nivel">
+                    <FastForward size={20} />
+                  </button>
+                </div>
+
+                {/* Next Level Info */}
+                {nextLevel && (
+                  <div style={styles.nextLevelInfo}>
+                    Siguiente Nivel: <span>${nextLevel.small_blind}/${nextLevel.big_blind}</span> (Ante: ${nextLevel.ante})
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -1132,9 +1184,16 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                           >
                             {player ? (
                               <div 
-                                style={styles.seatActive}
-                                onClick={() => handleAddPlayerAction(player, 'eliminate')}
-                                title={`Asiento ${seatNum}: ${getPlayerName(player)} (Haz clic para acciones)`}
+                                style={{
+                                  ...styles.seatActive,
+                                  cursor: tournament.status === 'completed' ? 'default' : 'pointer'
+                                }}
+                                onClick={() => {
+                                  if (tournament.status !== 'completed') {
+                                    handleAddPlayerAction(player, 'eliminate');
+                                  }
+                                }}
+                                title={tournament.status === 'completed' ? `Asiento ${seatNum}: ${getPlayerName(player)}` : `Asiento ${seatNum}: ${getPlayerName(player)} (Haz clic para acciones)`}
                               >
                                 <div style={styles.seatAvatar}>
                                   {getPlayerName(player).substring(0, 2).toUpperCase()}
@@ -1196,6 +1255,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                                 onChange={(e) => handleMovePlayerTable(p.id, Number(e.target.value))}
                                 className="form-input"
                                 style={{ padding: '4px 8px', fontSize: '0.8rem', width: '90px', background: 'rgba(3,7,18,0.4)', margin: 0 }}
+                                disabled={tournament.status === 'completed'}
                               >
                                 {Array.from({ length: Math.ceil(players.filter(pl => pl.status === 'active').length / tournament.max_players_per_table) }).map((_, i) => (
                                   <option key={i+1} value={i+1}>Mesa {i+1}</option>
@@ -1206,6 +1266,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                                 onChange={(e) => handleMovePlayerSeat(p.id, Number(e.target.value))}
                                 className="form-input"
                                 style={{ padding: '4px 8px', fontSize: '0.8rem', width: '80px', background: 'rgba(3,7,18,0.4)', margin: 0 }}
+                                disabled={tournament.status === 'completed'}
                               >
                                 {Array.from({ length: tournament.max_players_per_table }).map((_, i) => (
                                   <option key={i+1} value={i+1}>Silla {i+1}</option>
@@ -1964,5 +2025,127 @@ const styles: Record<string, React.CSSProperties> = {
   confirmButtons: {
     display: 'flex',
     gap: '10px',
+  },
+  completedHeaderCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '18px',
+    padding: '10px 0',
+  },
+  completedBadge: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    background: 'rgba(245, 158, 11, 0.12)',
+    border: '1px solid rgba(245, 158, 11, 0.25)',
+    borderRadius: '20px',
+    padding: '6px 16px',
+    color: '#f59e0b',
+    fontSize: '0.85rem',
+    fontWeight: 750,
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
+  },
+  podiumContainer: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: '12px',
+    width: '100%',
+    marginTop: '5px',
+  },
+  podiumStep1: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(245, 158, 11, 0.03) 100%)',
+    border: '1px solid rgba(245, 158, 11, 0.35)',
+    borderRadius: '12px',
+    padding: '14px 10px',
+    width: '105px',
+    minHeight: '135px',
+    boxShadow: '0 8px 32px 0 rgba(245, 158, 11, 0.1)',
+    order: 2,
+  },
+  podiumStep2: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    background: 'linear-gradient(135deg, rgba(226, 232, 240, 0.12) 0%, rgba(226, 232, 240, 0.02) 100%)',
+    border: '1px solid rgba(226, 232, 240, 0.18)',
+    borderRadius: '12px',
+    padding: '10px 8px',
+    width: '90px',
+    minHeight: '110px',
+    order: 1,
+  },
+  podiumStep3: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    background: 'linear-gradient(135deg, rgba(180, 83, 9, 0.12) 0%, rgba(180, 83, 9, 0.02) 100%)',
+    border: '1px solid rgba(180, 83, 9, 0.18)',
+    borderRadius: '12px',
+    padding: '10px 8px',
+    width: '90px',
+    minHeight: '95px',
+    order: 3,
+  },
+  podiumAvatarMain: {
+    fontSize: '2rem',
+    marginBottom: '6px',
+    filter: 'drop-shadow(0 0 6px rgba(245, 158, 11, 0.4))',
+  },
+  podiumAvatar: {
+    fontSize: '1.4rem',
+    marginBottom: '4px',
+  },
+  podiumNameMain: {
+    fontSize: '0.8rem',
+    fontWeight: 750,
+    color: '#ffffff',
+    textAlign: 'center',
+    width: '100%',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  podiumName: {
+    fontSize: '0.7rem',
+    fontWeight: 650,
+    color: 'var(--color-text-secondary)',
+    textAlign: 'center',
+    width: '100%',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  podiumPrizeMain: {
+    fontSize: '0.9rem',
+    fontWeight: 800,
+    color: '#f59e0b',
+    marginTop: '3px',
+  },
+  podiumPrize: {
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    color: '#e2e8f0',
+    marginTop: '2px',
+  },
+  podiumLabelMain: {
+    fontSize: '0.6rem',
+    fontWeight: 800,
+    color: '#f59e0b',
+    textTransform: 'uppercase',
+    marginTop: 'auto',
+    letterSpacing: '0.5px',
+  },
+  podiumLabel: {
+    fontSize: '0.55rem',
+    fontWeight: 700,
+    color: 'var(--color-text-muted)',
+    textTransform: 'uppercase',
+    marginTop: 'auto',
   },
 };
