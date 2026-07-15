@@ -31,6 +31,9 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
   const [selectedChampionshipId, setSelectedChampionshipId] = useState('');
   const [maxPlayersPerTable, setMaxPlayersPerTable] = useState(8);
   const [payoutOption, setPayoutOption] = useState('1'); // 1: Top 3 (50-30-20), 2: Top 2 (70-30), 3: Winner takes all (100)
+  const [payout1, setPayout1] = useState(50);
+  const [payout2, setPayout2] = useState(30);
+  const [payout3, setPayout3] = useState(20);
   
   // Step 2: Players
   const [allPlayers, setAllPlayers] = useState<Player[]>([]);
@@ -61,6 +64,18 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
           if (defs.add_on_chips !== undefined) setAddonChips(defs.add_on_chips);
           if (defs.rake_amount !== undefined) setRakeAmount(defs.rake_amount);
           if (defs.payout_option !== undefined) setPayoutOption(defs.payout_option);
+          
+          if (defs.payout_structure !== undefined && Array.isArray(defs.payout_structure)) {
+            const arr = defs.payout_structure;
+            if (arr.length === 3) {
+              setPayout1(arr[0] || 50);
+              setPayout2(arr[1] || 30);
+              setPayout3(arr[2] || 20);
+            } else if (arr.length === 2) {
+              setPayout1(arr[0] || 70);
+              setPayout2(arr[1] || 30);
+            }
+          }
         }
       }
     }
@@ -142,8 +157,23 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
       
       // Determine payout structure JSON array
       let payoutStructure: number[] = [100];
-      if (payoutOption === '1') payoutStructure = [50, 30, 20];
-      else if (payoutOption === '2') payoutStructure = [70, 30];
+      if (payoutOption === '1') {
+        const sum = Number(payout1) + Number(payout2) + Number(payout3);
+        if (sum !== 100) {
+          alert(`Los porcentajes de premios para Top 3 deben sumar exactamente 100% (actual: ${sum}%)`);
+          setLoading(false);
+          return;
+        }
+        payoutStructure = [Number(payout1), Number(payout2), Number(payout3)];
+      } else if (payoutOption === '2') {
+        const sum = Number(payout1) + Number(payout2);
+        if (sum !== 100) {
+          alert(`Los porcentajes de premios para Top 2 deben sumar exactamente 100% (actual: ${sum}%)`);
+          setLoading(false);
+          return;
+        }
+        payoutStructure = [Number(payout1), Number(payout2)];
+      }
 
       // Find structure levels to calculate initial time remaining
       let initialSeconds = 15 * 60; // fallback 15 mins
@@ -295,12 +325,52 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
 
             <div className="form-group">
               <label className="form-label">Distribución de Premios</label>
-              <select className="form-input" value={payoutOption} onChange={(e) => setPayoutOption(e.target.value)}>
-                <option value="1">Top 3 pagados (50% - 30% - 20%)</option>
-                <option value="2">Top 2 pagados (70% - 30%)</option>
+              <select className="form-input" value={payoutOption} onChange={(e) => {
+                const val = e.target.value;
+                setPayoutOption(val);
+                if (val === '1') {
+                  setPayout1(50);
+                  setPayout2(30);
+                  setPayout3(20);
+                } else if (val === '2') {
+                  setPayout1(70);
+                  setPayout2(30);
+                }
+              }}>
+                <option value="1">Top 3 pagados (Personalizado)</option>
+                <option value="2">Top 2 pagados (Personalizado)</option>
                 <option value="3">Ganador toma todo (100%)</option>
               </select>
             </div>
+
+            {payoutOption === '1' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '14px', background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '2px' }}>1° Lugar (%)</label>
+                  <input type="number" className="form-input" value={payout1} onChange={(e) => setPayout1(Number(e.target.value))} style={{ padding: '6px 8px', fontSize: '0.8rem' }} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '2px' }}>2° Lugar (%)</label>
+                  <input type="number" className="form-input" value={payout2} onChange={(e) => setPayout2(Number(e.target.value))} style={{ padding: '6px 8px', fontSize: '0.8rem' }} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '2px' }}>3° Lugar (%)</label>
+                  <input type="number" className="form-input" value={payout3} onChange={(e) => setPayout3(Number(e.target.value))} style={{ padding: '6px 8px', fontSize: '0.8rem' }} />
+                </div>
+              </div>
+            )}
+            {payoutOption === '2' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px', background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>1° Lugar (%)</label>
+                  <input type="number" className="form-input" value={payout1} onChange={(e) => setPayout1(Number(e.target.value))} style={{ padding: '6px 10px', fontSize: '0.85rem' }} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>2° Lugar (%)</label>
+                  <input type="number" className="form-input" value={payout2} onChange={(e) => setPayout2(Number(e.target.value))} style={{ padding: '6px 10px', fontSize: '0.85rem' }} />
+                </div>
+              </div>
+            )}
 
             <button className="btn btn-primary" style={{ width: '100%', padding: '14px', marginTop: '20px' }} onClick={() => setStep(2)}>
               Siguiente: Registrar Jugadores <ChevronRight size={18} />

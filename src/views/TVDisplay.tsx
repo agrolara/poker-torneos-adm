@@ -18,6 +18,9 @@ interface TVState {
   average_stack: number;
   prize_pool: number;
   payouts: number[];
+  is_break?: boolean;
+  duration_minutes?: number;
+  level_label?: string;
 }
 
 export const TVDisplay: React.FC = () => {
@@ -115,7 +118,11 @@ export const TVDisplay: React.FC = () => {
         if (payload.current_level_index !== lastAnnouncedLevelRef.current) {
           if (lastAnnouncedLevelRef.current !== -1) {
             if (voiceEnabledRef.current) {
-              speakAnnounce(`¡Atención! Ciegas suben. Nivel nuevo. Ciegas: ${payload.small_blind} y ${payload.big_blind}. Ante de ${payload.ante || 0}`);
+              if (payload.is_break) {
+                speakAnnounce(`¡Tiempo de descanso! Iniciamos un descanso de ${payload.duration_minutes || 15} minutos.`);
+              } else {
+                speakAnnounce(`¡Atención! Ciegas suben. Nivel nuevo. Ciegas: ${payload.small_blind} y ${payload.big_blind}. Ante de ${payload.ante || 0}`);
+              }
             } else {
               playAlarmSound();
             }
@@ -188,7 +195,9 @@ export const TVDisplay: React.FC = () => {
         {/* Left column: Blinds and Clock */}
         <div style={styles.leftColumn}>
           {/* Active Level */}
-          <div style={styles.levelHeading}>NIVEL {state.current_level_index + 1}</div>
+          <div style={styles.levelHeading}>
+            {state.is_break ? 'DESCANSO' : (state.level_label || `NIVEL ${state.current_level_index + 1}`)}
+          </div>
           
           {/* Big Timer */}
           <div style={styles.timerDisplay}>
@@ -197,11 +206,15 @@ export const TVDisplay: React.FC = () => {
 
           {/* Huge Blinds display */}
           <div style={styles.blindsBox}>
-            <div style={styles.blindsLabel}>CIEGAS</div>
-            <div style={styles.blindsVal}>
-              ${state.small_blind.toLocaleString()} / ${state.big_blind.toLocaleString()}
+            <div style={styles.blindsLabel}>{state.is_break ? 'ESTADO' : 'CIEGAS'}</div>
+            <div style={{
+              ...styles.blindsVal,
+              color: state.is_break ? '#10b981' : '#ffffff',
+              fontSize: state.is_break ? '4.2rem' : '5rem'
+            }}>
+              {state.is_break ? 'BREAK' : `$${state.small_blind.toLocaleString()} / $${state.big_blind.toLocaleString()}`}
             </div>
-            {state.ante > 0 && (
+            {!state.is_break && state.ante > 0 && (
               <div style={styles.anteVal}>ANTE: ${state.ante.toLocaleString()}</div>
             )}
           </div>

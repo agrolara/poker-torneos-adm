@@ -80,12 +80,18 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
   const [defaultAddonChips, setDefaultAddonChips] = useState(15000);
   const [defaultRakeAmount, setDefaultRakeAmount] = useState(3000);
   const [defaultPayoutOption, setDefaultPayoutOption] = useState('1');
+  const [defaultPayout1, setDefaultPayout1] = useState(50);
+  const [defaultPayout2, setDefaultPayout2] = useState(30);
+  const [defaultPayout3, setDefaultPayout3] = useState(20);
 
   // Helper inputs for adding a level
   const [sb, setSb] = useState(100);
   const [bb, setBb] = useState(200);
   const [ante, setAnte] = useState(0);
   const [duration, setDuration] = useState(15);
+
+  const [breakDuration, setBreakDuration] = useState(15);
+  const [insertAfterLevelIdx, setInsertAfterLevelIdx] = useState(0);
 
   const getLevelsArray = (bsLevels: any): Level[] => {
     if (!bsLevels) return [];
@@ -117,25 +123,82 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
   };
 
   const handleAddLevel = () => {
+    const standardLevelsCount = levels.filter(lvl => !lvl.is_break).length;
     const newLevel: Level = {
-      level: levels.length + 1,
+      level: standardLevelsCount + 1,
       small_blind: Number(sb),
       big_blind: Number(bb),
       ante: Number(ante),
       duration: Number(duration),
     };
-    setLevels([...levels, newLevel]);
+    const updated = [...levels, newLevel];
+    setLevels(updated);
+    setInsertAfterLevelIdx(updated.length - 1);
     // Auto-increment blinds for easy next entry
     setSb(bb);
     setBb(bb * 2);
   };
 
   const handleRemoveLevel = (index: number) => {
-    const updated = levels.filter((_, i) => i !== index).map((lvl, i) => ({
-      ...lvl,
-      level: i + 1
-    }));
-    setLevels(updated);
+    const filtered = levels.filter((_, i) => i !== index);
+    let standardLevelCounter = 1;
+    const reindexed = filtered.map((lvl) => {
+      if (lvl.is_break) {
+        return { ...lvl, level: 0 };
+      } else {
+        const currentCounter = standardLevelCounter;
+        standardLevelCounter++;
+        return { ...lvl, level: currentCounter };
+      }
+    });
+    setLevels(reindexed);
+    if (reindexed.length > 0) {
+      setInsertAfterLevelIdx(Math.min(insertAfterLevelIdx, reindexed.length - 1));
+    } else {
+      setInsertAfterLevelIdx(0);
+    }
+  };
+
+  const handleAddBreak = () => {
+    if (levels.length === 0) {
+      alert('Debes añadir al menos un nivel de ciegas antes de poder insertar un descanso.');
+      return;
+    }
+    const idx = Number(insertAfterLevelIdx);
+    if (idx < 0 || idx >= levels.length) {
+      alert('Posición de inserción no válida.');
+      return;
+    }
+
+    const updated = [...levels];
+    const newBreak = {
+      level: 0,
+      small_blind: 0,
+      big_blind: 0,
+      ante: 0,
+      duration: Number(breakDuration),
+      is_break: true
+    };
+    updated.splice(idx + 1, 0, newBreak);
+
+    // Re-index standard levels
+    let standardLevelCounter = 1;
+    const reindexed = updated.map((lvl) => {
+      if (lvl.is_break) {
+        return { ...lvl, level: 0 };
+      } else {
+        const currentCounter = standardLevelCounter;
+        standardLevelCounter++;
+        return { ...lvl, level: currentCounter };
+      }
+    });
+    
+    setLevels(reindexed);
+    if (reindexed.length > idx + 2) {
+      setInsertAfterLevelIdx(idx + 2);
+    } else {
+      setInsertAfterLevelIdx(reindexed.length - 1);
+    }
   };
 
   const handleSave = async () => {
@@ -148,6 +211,20 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
       return;
     }
 
+    if (defaultPayoutOption === '1') {
+      const sum = Number(defaultPayout1) + Number(defaultPayout2) + Number(defaultPayout3);
+      if (sum !== 100) {
+        alert(`Los porcentajes de premios para Top 3 deben sumar exactamente 100% (actual: ${sum}%)`);
+        return;
+      }
+    } else if (defaultPayoutOption === '2') {
+      const sum = Number(defaultPayout1) + Number(defaultPayout2);
+      if (sum !== 100) {
+        alert(`Los porcentajes de premios para Top 2 deben sumar exactamente 100% (actual: ${sum}%)`);
+        return;
+      }
+    }
+
     const levelsPayload = {
       levels: levels,
       defaults: {
@@ -158,7 +235,9 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
         add_on_amount: Number(defaultAddonAmount),
         add_on_chips: Number(defaultAddonChips),
         rake_amount: Number(defaultRakeAmount),
-        payout_option: defaultPayoutOption
+        payout_option: defaultPayoutOption,
+        payout_structure: defaultPayoutOption === '1' ? [Number(defaultPayout1), Number(defaultPayout2), Number(defaultPayout3)] :
+                          defaultPayoutOption === '2' ? [Number(defaultPayout1), Number(defaultPayout2)] : [100]
       }
     };
 
@@ -335,12 +414,52 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
 
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Distribución de Premios</label>
-                <select className="form-input" value={defaultPayoutOption} onChange={(e) => setDefaultPayoutOption(e.target.value)} style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
-                  <option value="1">Top 3 pagados (50% - 30% - 20%)</option>
-                  <option value="2">Top 2 pagados (70% - 30%)</option>
+                <select className="form-input" value={defaultPayoutOption} onChange={(e) => {
+                  const val = e.target.value;
+                  setDefaultPayoutOption(val);
+                  if (val === '1') {
+                    setDefaultPayout1(50);
+                    setDefaultPayout2(30);
+                    setDefaultPayout3(20);
+                  } else if (val === '2') {
+                    setDefaultPayout1(70);
+                    setDefaultPayout2(30);
+                  }
+                }} style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
+                  <option value="1">Top 3 pagados (Personalizado)</option>
+                  <option value="2">Top 2 pagados (Personalizado)</option>
                   <option value="3">Ganador toma todo (100%)</option>
                 </select>
               </div>
+
+              {defaultPayoutOption === '1' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '10px', background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '2px' }}>1° Lugar (%)</label>
+                    <input type="number" className="form-input" value={defaultPayout1} onChange={(e) => setDefaultPayout1(Number(e.target.value))} style={{ padding: '6px 8px', fontSize: '0.8rem' }} />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '2px' }}>2° Lugar (%)</label>
+                    <input type="number" className="form-input" value={defaultPayout2} onChange={(e) => setDefaultPayout2(Number(e.target.value))} style={{ padding: '6px 8px', fontSize: '0.8rem' }} />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '2px' }}>3° Lugar (%)</label>
+                    <input type="number" className="form-input" value={defaultPayout3} onChange={(e) => setDefaultPayout3(Number(e.target.value))} style={{ padding: '6px 8px', fontSize: '0.8rem' }} />
+                  </div>
+                </div>
+              )}
+              {defaultPayoutOption === '2' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px', background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>1° Lugar (%)</label>
+                    <input type="number" className="form-input" value={defaultPayout1} onChange={(e) => setDefaultPayout1(Number(e.target.value))} style={{ padding: '6px 10px', fontSize: '0.85rem' }} />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '2px' }}>2° Lugar (%)</label>
+                    <input type="number" className="form-input" value={defaultPayout2} onChange={(e) => setDefaultPayout2(Number(e.target.value))} style={{ padding: '6px 10px', fontSize: '0.85rem' }} />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div style={styles.addLevelBlock}>
@@ -364,7 +483,33 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
                 </div>
               </div>
               <button type="button" className="btn btn-outline" style={{ width: '100%', marginTop: '10px' }} onClick={handleAddLevel}>
-                <Plus size={16} /> Añadir Nivel {levels.length + 1}
+                <Plus size={16} /> Añadir Nivel {levels.filter(lvl => !lvl.is_break).length + 1}
+              </button>
+            </div>
+
+            <div style={{ ...styles.addLevelBlock, marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '16px' }}>
+              <h4 style={styles.levelBlockTitle}>Añadir Break / Descanso</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+                <div className="form-group">
+                  <label className="form-label" style={styles.smallLabel}>Insertar después del nivel:</label>
+                  <select className="form-input" value={insertAfterLevelIdx} onChange={(e) => setInsertAfterLevelIdx(Number(e.target.value))} style={{ padding: '6px', fontSize: '0.85rem' }}>
+                    {levels.map((lvl, idx) => (
+                      <option key={idx} value={idx}>
+                        {lvl.is_break ? `Pos. ${idx + 1}: Descanso (${lvl.duration} min)` : `Pos. ${idx + 1}: Nivel ${lvl.level} ($${lvl.small_blind}/$${lvl.big_blind})`}
+                      </option>
+                    ))}
+                    {levels.length === 0 && (
+                      <option value="0">Crea algún nivel primero</option>
+                    )}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={styles.smallLabel}>Duración Break (Min)</label>
+                  <input type="number" className="form-input" value={breakDuration} onChange={(e) => setBreakDuration(Number(e.target.value))} style={{ padding: '6px', fontSize: '0.85rem' }} />
+                </div>
+              </div>
+              <button type="button" className="btn btn-outline" style={{ width: '100%', marginTop: '10px', borderColor: '#10b981', color: '#10b981' }} onClick={handleAddBreak}>
+                <Plus size={16} /> Añadir Descanso / Break
               </button>
             </div>
 
@@ -394,11 +539,21 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
                   </thead>
                   <tbody>
                     {levels.map((lvl, idx) => (
-                      <tr key={idx} style={styles.tr}>
-                        <td style={{ ...styles.td, fontWeight: 700 }}>#{lvl.level}</td>
-                        <td style={styles.td}>${lvl.small_blind.toLocaleString()}</td>
-                        <td style={styles.td}>${lvl.big_blind.toLocaleString()}</td>
-                        <td style={styles.td}>${lvl.ante.toLocaleString()}</td>
+                      <tr key={idx} style={{
+                        ...styles.tr,
+                        background: lvl.is_break ? 'rgba(16, 185, 129, 0.05)' : 'transparent',
+                        borderLeft: lvl.is_break ? '4px solid #10b981' : 'none'
+                      }}>
+                        <td style={{ ...styles.td, fontWeight: 700 }}>
+                          {lvl.is_break ? (
+                            <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>BREAK</span>
+                          ) : (
+                            `#${lvl.level}`
+                          )}
+                        </td>
+                        <td style={styles.td}>{lvl.is_break ? '-' : `$${lvl.small_blind.toLocaleString()}`}</td>
+                        <td style={styles.td}>{lvl.is_break ? '-' : `$${lvl.big_blind.toLocaleString()}`}</td>
+                        <td style={styles.td}>{lvl.is_break ? '-' : `$${lvl.ante.toLocaleString()}`}</td>
                         <td style={styles.td}>{lvl.duration} Min</td>
                         <td style={{ ...styles.td, textAlign: 'right' }}>
                           <button style={styles.actionBtnDelete} onClick={() => handleRemoveLevel(idx)}>
@@ -454,6 +609,17 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
                             setDefaultAddonChips(defs.add_on_chips || 0);
                             setDefaultRakeAmount(defs.rake_amount || 0);
                             setDefaultPayoutOption(defs.payout_option || '1');
+                            if (defs.payout_structure && Array.isArray(defs.payout_structure)) {
+                              const arr = defs.payout_structure;
+                              if (arr.length === 3) {
+                                setDefaultPayout1(arr[0] || 50);
+                                setDefaultPayout2(arr[1] || 30);
+                                setDefaultPayout3(arr[2] || 20);
+                              } else if (arr.length === 2) {
+                                setDefaultPayout1(arr[0] || 70);
+                                setDefaultPayout2(arr[1] || 30);
+                              }
+                            }
                           } else {
                             setDefaultBuyInAmount(10000);
                             setDefaultBuyInChips(10000);
@@ -463,6 +629,9 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
                             setDefaultAddonChips(15000);
                             setDefaultRakeAmount(3000);
                             setDefaultPayoutOption('1');
+                            setDefaultPayout1(50);
+                            setDefaultPayout2(30);
+                            setDefaultPayout3(20);
                           }
                           setIsEditing(true);
                         }}>

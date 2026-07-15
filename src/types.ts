@@ -11,6 +11,7 @@ export interface Level {
   big_blind: number;
   ante: number;
   duration: number; // in minutes
+  is_break?: boolean;
 }
 
 export interface BlindStructure {

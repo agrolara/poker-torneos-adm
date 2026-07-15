@@ -223,6 +223,9 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
         average_stack: calculateAverageStack(activeCount),
         prize_pool: prizePool,
         payouts: payouts,
+        is_break: activeLevel?.is_break || false,
+        duration_minutes: activeLevel?.duration || 0,
+        level_label: activeLevel?.is_break ? 'DESCANSO' : `NIVEL ${activeLevel?.level || 1}`
       }
     });
   };
@@ -261,16 +264,22 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
 
   const handleLevelUp = () => {
     if (!structure) return;
+    const lvls = getLevelsArray();
     const nextIdx = currentLevelIdx + 1;
-    if (nextIdx < structure.levels.length) {
-      const nextLevel = structure.levels[nextIdx];
+    if (nextIdx < lvls.length) {
+      const nextLevel = lvls[nextIdx];
       setCurrentLevelIdx(nextIdx);
       setSecondsRemaining(nextLevel.duration * 60);
       
       // Voice synthesis announcement
-      speakAnnounce(`¡Ciegas arriba! Nivel ${nextLevel.level}. Ciegas: ${nextLevel.small_blind} y ${nextLevel.big_blind}. Ante de ${nextLevel.ante}`);
-      
-      addLog('level_change', { level: nextLevel.level, small_blind: nextLevel.small_blind, big_blind: nextLevel.big_blind });
+      if (nextLevel.is_break) {
+        speakAnnounce(`¡Tiempo de descanso! Iniciamos un descanso de ${nextLevel.duration} minutos.`);
+        addLog('level_change', { level: 0, small_blind: 0, big_blind: 0, is_break: true });
+      } else {
+        speakAnnounce(`¡Ciegas arriba! Nivel ${nextLevel.level}. Ciegas: ${nextLevel.small_blind} y ${nextLevel.big_blind}. Ante de ${nextLevel.ante}`);
+        addLog('level_change', { level: nextLevel.level, small_blind: nextLevel.small_blind, big_blind: nextLevel.big_blind });
+      }
+
       saveTimerStateToDb({
         current_level_index: nextIdx,
         seconds_remaining: nextLevel.duration * 60
@@ -284,12 +293,18 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
 
   const handleLevelDown = () => {
     if (!structure || currentLevelIdx === 0) return;
+    const lvls = getLevelsArray();
     const prevIdx = currentLevelIdx - 1;
-    const prevLevel = structure.levels[prevIdx];
+    const prevLevel = lvls[prevIdx];
     setCurrentLevelIdx(prevIdx);
     setSecondsRemaining(prevLevel.duration * 60);
     
-    addLog('level_change', { level: prevLevel.level, small_blind: prevLevel.small_blind, big_blind: prevLevel.big_blind, direction: 'back' });
+    if (prevLevel.is_break) {
+      addLog('level_change', { level: 0, small_blind: 0, big_blind: 0, is_break: true, direction: 'back' });
+    } else {
+      addLog('level_change', { level: prevLevel.level, small_blind: prevLevel.small_blind, big_blind: prevLevel.big_blind, direction: 'back' });
+    }
+
     saveTimerStateToDb({
       current_level_index: prevIdx,
       seconds_remaining: prevLevel.duration * 60
@@ -919,15 +934,21 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     }
   };
 
+  const getLevelsArray = (): Level[] => {
+    if (!structure) return [];
+    if (Array.isArray(structure.levels)) return structure.levels;
+    return (structure.levels as any).levels || [];
+  };
+
   // Helper selectors
   const getCurrentLevel = (): Level | null => {
-    if (!structure) return null;
-    return structure.levels[currentLevelIdx] || null;
+    const lvls = getLevelsArray();
+    return lvls[currentLevelIdx] || null;
   };
 
   const getNextLevel = (): Level | null => {
-    if (!structure) return null;
-    return structure.levels[currentLevelIdx + 1] || null;
+    const lvls = getLevelsArray();
+    return lvls[currentLevelIdx + 1] || null;
   };
 
   const getPlayerName = (p: TournamentPlayer) => {
@@ -1109,15 +1130,25 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
               </div>
             ) : (
               <>
-                <div style={styles.levelHeader}>NIVEL {activeLevel?.level || 1}</div>
+                <div style={styles.levelHeader}>
+                  {activeLevel?.is_break ? 'DESCANSO' : `NIVEL ${activeLevel?.level || 1}`}
+                </div>
                 
                 <div className="control-timer-display" style={styles.timerDisplay}>
                   {formatTime(secondsRemaining)}
                 </div>
 
-                <div style={styles.blindsDisplay}>
-                  ${activeLevel?.small_blind || 0} / ${activeLevel?.big_blind || 0}
-                  {activeLevel?.ante ? <span style={styles.anteLabel}> (Ante: ${activeLevel.ante})</span> : ''}
+                <div style={{
+                  ...styles.blindsDisplay,
+                  color: activeLevel?.is_break ? '#10b981' : '#ffffff',
+                  fontSize: activeLevel?.is_break ? '1.8rem' : '2.2rem'
+                }}>
+                  {activeLevel?.is_break ? (
+                    'TIEMPO DE BREAK'
+                  ) : (
+                    <>${activeLevel?.small_blind || 0} / ${activeLevel?.big_blind || 0}
+                    {activeLevel?.ante ? <span style={styles.anteLabel}> (Ante: ${activeLevel.ante})</span> : ''}</>
+                  )}
                 </div>
 
                 {/* Timer Controllers */}
@@ -1146,7 +1177,11 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 {/* Next Level Info */}
                 {nextLevel && (
                   <div style={styles.nextLevelInfo}>
-                    Siguiente Nivel: <span>${nextLevel.small_blind}/${nextLevel.big_blind}</span> (Ante: ${nextLevel.ante})
+                    {nextLevel.is_break ? (
+                      <>Próximo: <span style={{ color: '#10b981' }}>Descanso / Break ({nextLevel.duration} min)</span></>
+                    ) : (
+                      <>Siguiente Nivel: <span>${nextLevel.small_blind}/${nextLevel.big_blind}</span> (Ante: ${nextLevel.ante})</>
+                    )}
                   </div>
                 )}
               </>
