@@ -104,12 +104,14 @@ export const TVDisplay: React.FC = () => {
     }
   };
 
-  // Helper: derive accurate seconds from a DB snapshot with timer_reference_at
+  const clockOffsetRef = useRef<number>(0);
+
+  // Helper: derive accurate seconds from a DB snapshot with timer_reference_at and client offset
   const deriveSecondsFromSnapshot = (dbSeconds: number, referenceAt: string | null | undefined, isRunning: boolean): number => {
     if (!isRunning || !referenceAt) return dbSeconds;
     const refTime = new Date(referenceAt).getTime();
-    const now = Date.now();
-    const elapsed = Math.floor((now - refTime) / 1000);
+    const nowServer = Date.now() + clockOffsetRef.current;
+    const elapsed = Math.floor((nowServer - refTime) / 1000);
     return Math.max(0, dbSeconds - elapsed);
   };
 
@@ -237,7 +239,39 @@ export const TVDisplay: React.FC = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const tournamentId = urlParams.get('id');
 
-    // Connect to BroadcastChannel (local sync)
+    // Fetch server clock offset to compensate for client system clock drift
+    const fetchOffset = async () => {
+      const url = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!url || !anonKey || url === 'undefined') return;
+      try {
+        const start = Date.now();
+        const res = await fetch(`${url}/rest/v1/`, {
+          method: 'GET',
+          headers: {
+            'apikey': anonKey,
+            'Authorization': `Bearer ${anonKey}`
+          }
+        });
+        const dateHeader = res.headers.get('date');
+        if (dateHeader) {
+          const serverTime = new Date(dateHeader).getTime();
+          const rtt = Date.now() - start;
+          const clientTimeMid = start + rtt / 2;
+          clockOffsetRef.current = serverTime - clientTimeMid;
+        }
+      } catch (e) {
+        console.error('Failed to calculate server clock offset:', e);
+      }
+    };
+
+    fetchOffset().then(() => {
+      if (tournamentId) {
+        fetchStateFromDb(tournamentId);
+      }
+    });
+
+    // Connect to BroadcastChannel (local tabs sync)
     const channel = new BroadcastChannel('poker_tournament_sync');
     broadcastChannelRef.current = channel;
 
@@ -256,12 +290,19 @@ export const TVDisplay: React.FC = () => {
     let realtimeChannel: any = null;
 
     if (tournamentId) {
-      // 1. Initial database fetch
-      fetchStateFromDb(tournamentId);
-
-      // 2. Subscribe to realtime updates on tournaments and tournament_players
+      // Subscribe to realtime updates and broadcast channel
       realtimeChannel = supabase
-        .channel(`tv-sync-${tournamentId}`)
+        .channel(`tournament-sync-${tournamentId}`, {
+          config: {
+            broadcast: { self: false }
+          }
+        })
+        .on('broadcast', { event: 'TICK' }, (payload: any) => {
+          setLocalSeconds(payload.payload.seconds_remaining);
+        })
+        .on('broadcast', { event: 'STATE_UPDATE' }, (payload: any) => {
+          updateTVStateAndAnnounce(payload.payload);
+        })
         .on(
           'postgres_changes',
           {
@@ -286,7 +327,16 @@ export const TVDisplay: React.FC = () => {
             fetchStateFromDb(tournamentId);
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            // Request state globally via broadcast
+            realtimeChannel.send({
+              type: 'broadcast',
+              event: 'REQUEST_STATE',
+              payload: {}
+            });
+          }
+        });
     }
 
     // Local tick interpolation for smooth clock transitions

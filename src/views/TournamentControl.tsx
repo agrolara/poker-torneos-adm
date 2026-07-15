@@ -56,31 +56,65 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   const lastWarnedMinuteLevelRef = useRef<number>(-1);
   const isFirstLoadRef = useRef(true);
 
-  // Helper: derive accurate seconds from a DB snapshot with timer_reference_at
+  // Helper: derive accurate seconds from a DB snapshot with timer_reference_at and client offset
   const deriveSecondsFromSnapshot = (dbSeconds: number, referenceAt: string | null | undefined, isRunning: boolean): number => {
     if (!isRunning || !referenceAt) return dbSeconds;
     const refTime = new Date(referenceAt).getTime();
-    const now = Date.now();
-    const elapsed = Math.floor((now - refTime) / 1000);
+    const nowServer = Date.now() + clockOffsetRef.current;
+    const elapsed = Math.floor((nowServer - refTime) / 1000);
     return Math.max(0, dbSeconds - elapsed);
   };
 
+  const clockOffsetRef = useRef<number>(0);
+
   useEffect(() => {
+    // Fetch server clock offset to compensate for client system clock drift
+    const fetchOffset = async () => {
+      const url = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (!url || !anonKey || url === 'undefined') return;
+      try {
+        const start = Date.now();
+        const res = await fetch(`${url}/rest/v1/`, {
+          method: 'GET',
+          headers: {
+            'apikey': anonKey,
+            'Authorization': `Bearer ${anonKey}`
+          }
+        });
+        const dateHeader = res.headers.get('date');
+        if (dateHeader) {
+          const serverTime = new Date(dateHeader).getTime();
+          const rtt = Date.now() - start;
+          const clientTimeMid = start + rtt / 2;
+          clockOffsetRef.current = serverTime - clientTimeMid;
+        }
+      } catch (e) {
+        console.error('Failed to calculate server clock offset:', e);
+      }
+    };
+
+    fetchOffset().then(() => {
+      fetchTournamentData();
+    });
+
     // Initialize Sync channel (local tabs)
     broadcastChannelRef.current = new BroadcastChannel('poker_tournament_sync');
     
-    fetchTournamentData();
-
-    // Listen for requests from newly opened TV screens
+    // Listen for requests from newly opened TV screens locally
     broadcastChannelRef.current.onmessage = (event) => {
       if (event.data && event.data.type === 'REQUEST_STATE') {
         broadcastState();
       }
     };
 
-    // Supabase Realtime subscription for cross-device sync
+    // Supabase Realtime subscription for cross-device sync and broadcast channel
     const channel = supabase
-      .channel(`tournament-sync-${initialTournament.id}`)
+      .channel(`tournament-sync-${initialTournament.id}`, {
+        config: {
+          broadcast: { self: false }
+        }
+      })
       .on(
         'postgres_changes',
         {
@@ -93,9 +127,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           const newData = payload.new;
           if (!newData) return;
           
-          // Only apply remote updates (ignore our own saves)
-          // We detect remote updates by checking if the timer_reference_at differs
-          // significantly from what we'd expect
+          // Compensate with calculated clock offset
           const derivedSeconds = deriveSecondsFromSnapshot(
             newData.seconds_remaining,
             newData.timer_reference_at,
@@ -109,6 +141,10 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           setCurrentLevelIdx(newData.current_level_index);
         }
       )
+      .on('broadcast', { event: 'REQUEST_STATE' }, () => {
+        // Someone requested state globally, broadcast it
+        broadcastState();
+      })
       .subscribe();
     
     realtimeChannelRef.current = channel;
@@ -131,9 +167,15 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
             return 0;
           }
           const nextSec = prev - 1;
-          // Send simple tick sync
+          // Send simple tick sync locally
           broadcastChannelRef.current?.postMessage({
             type: 'TICK',
+            payload: { seconds_remaining: nextSec }
+          });
+          // Send simple tick sync globally via WebSocket Broadcast
+          realtimeChannelRef.current?.send({
+            type: 'broadcast',
+            event: 'TICK',
             payload: { seconds_remaining: nextSec }
           });
           return nextSec;
@@ -250,37 +292,45 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
 
 
   const broadcastState = () => {
-    if (!broadcastChannelRef.current) return;
-    
     const activeLevel = getCurrentLevel();
     const nextLevel = getNextLevel();
     const activeCount = players.filter(p => p.status === 'active').length;
 
     const { prizePool, payouts } = calculateFinancials();
 
-    broadcastChannelRef.current.postMessage({
+    const statePayload = {
+      tournament_name: tournament.name,
+      status: tournament.status,
+      seconds_remaining: secondsRemaining,
+      is_timer_running: isRunning,
+      current_level_index: currentLevelIdx,
+      small_blind: activeLevel?.small_blind || 0,
+      big_blind: activeLevel?.big_blind || 0,
+      ante: activeLevel?.ante || 0,
+      next_small_blind: nextLevel?.small_blind || 0,
+      next_big_blind: nextLevel?.big_blind || 0,
+      next_ante: nextLevel?.ante || 0,
+      active_players: activeCount,
+      total_players: players.length,
+      average_stack: calculateAverageStack(activeCount),
+      prize_pool: prizePool,
+      payouts: payouts,
+      is_break: activeLevel?.is_break || false,
+      duration_minutes: activeLevel?.duration || 0,
+      level_label: activeLevel?.is_break ? 'DESCANSO' : `NIVEL ${activeLevel?.level || 1}`
+    };
+
+    // 1. Local tabs sync
+    broadcastChannelRef.current?.postMessage({
       type: 'STATE_UPDATE',
-      payload: {
-        tournament_name: tournament.name,
-        status: tournament.status,
-        seconds_remaining: secondsRemaining,
-        is_timer_running: isRunning,
-        current_level_index: currentLevelIdx,
-        small_blind: activeLevel?.small_blind || 0,
-        big_blind: activeLevel?.big_blind || 0,
-        ante: activeLevel?.ante || 0,
-        next_small_blind: nextLevel?.small_blind || 0,
-        next_big_blind: nextLevel?.big_blind || 0,
-        next_ante: nextLevel?.ante || 0,
-        active_players: activeCount,
-        total_players: players.length,
-        average_stack: calculateAverageStack(activeCount),
-        prize_pool: prizePool,
-        payouts: payouts,
-        is_break: activeLevel?.is_break || false,
-        duration_minutes: activeLevel?.duration || 0,
-        level_label: activeLevel?.is_break ? 'DESCANSO' : `NIVEL ${activeLevel?.level || 1}`
-      }
+      payload: statePayload
+    });
+
+    // 2. Global cross-device sync via WebSockets
+    realtimeChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'STATE_UPDATE',
+      payload: statePayload
     });
   };
 
