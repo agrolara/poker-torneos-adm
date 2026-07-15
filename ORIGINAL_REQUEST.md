@@ -92,3 +92,39 @@ Integrity mode: development
 - [ ] El dashboard no presenta desbordamientos horizontales ni textos superpuestos en dispositivos móviles (viewport de 360px a 480px).
 - [ ] La aplicación compila sin errores de TypeScript y Vite (`npm run build`).
 
+## Follow-up — 2026-07-15T03:12:05-04:00
+
+Resolve the tournament timer synchronization and level progression issues across all connected devices (mobile, tablet, PC), ensuring zero drift and making sure page refreshes do not reset, skip, or drift the timer.
+
+Working directory: C:\Users\Usuario\Documents\antigravity\Poker torneos adm
+Integrity mode: development
+
+## Requirements
+
+### R1. Sincronización Universal y Robusta del Reloj
+* Sincronizar el temporizador (timer), el nivel actual y el estado de reproducción (reanudado/pausado) en todos los dispositivos conectados (consola de control, pantallas de TV, celulares de espectadores) en tiempo real.
+* Los ticks de cuenta regresiva deben avanzar de manera uniforme en todos los dispositivos (diferencia menor a 1 segundo).
+
+### R2. Resistencia Absoluta al Refresco de Pantalla
+* Refrescar la página en cualquier momento (en la consola del organizador o la pantalla TV) no debe reiniciar, desfasar o saltar hacia atrás el cronómetro.
+* Al recargar la página, se debe recuperar inmediatamente el estado de cuenta regresiva exacto del servidor.
+
+### R3. Prevención de Conflictos de Escritura Concurrente
+* Evitar condiciones de carrera (race conditions) si un organizador abre la consola de control del mismo torneo en varias pestañas o dispositivos simultáneamente.
+* Solo un temporizador maestro debe ser el encargado de actualizar la base de datos o emitir ticks; los dispositivos pasivos (pantallas de TV, espectadores) deben limitarse a escuchar y sincronizarse sin generar bucles de escritura.
+
+## Acceptance Criteria
+
+### Sincronización en Tiempo Real
+- [ ] Los tiempos de cuenta regresiva coinciden segundo a segundo en múltiples navegadores y dispositivos diferentes.
+- [ ] La pausa y la reanudación del reloj se reflejan en menos de 1 segundo en todos los clientes conectados.
+- [ ] Al llegar a cero, el nivel sube (o entra el break) y se sincroniza al mismo tiempo en todas las pantallas.
+
+### Resistencia al Refresco
+- [ ] Refrescar repetidamente la página (F5) no causa un salto hacia atrás ni reinicia los segundos restantes.
+- [ ] El tiempo se mantiene alineado con la persistencia real.
+
+### Calidad y Compilación
+- [ ] No existen conflictos de múltiples dispositivos compitiendo por reescribir segundos diferentes en la base de datos.
+- [ ] La aplicación compila sin errores de TypeScript y Vite (`npm run build`).
+

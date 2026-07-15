@@ -1,0 +1,48 @@
+diff --git a/src/views/TournamentControl.tsx b/src/views/TournamentControl.tsx
+index 45b84c8..963f25c 100644
+--- a/src/views/TournamentControl.tsx
++++ b/src/views/TournamentControl.tsx
+@@ -198,22 +198,33 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
+     };
+   }, []);
+ 
++  const tickRef = useRef<() => void>();
++  tickRef.current = () => {
++    const derived = deriveSeconds();
++    setSecondsRemaining(derived);
++
++    // Automatic level progression when remaining time hits 0
++    if (dbIsTimerRunningRef.current && derived === 0 && lastAutoProgressedLevelRef.current !== currentLevelIdxRef.current) {
++      lastAutoProgressedLevelRef.current = currentLevelIdxRef.current;
++      handleLevelUp();
++    }
++
++    // Play warning at 60 seconds (only once per level)
++    if (dbIsTimerRunningRef.current && derived === 60 && lastWarnedMinuteLevelRef.current !== currentLevelIdxRef.current) {
++      speakAnnounce("¡Último minuto de nivel!");
++      lastWarnedMinuteLevelRef.current = currentLevelIdxRef.current;
++    }
++  };
++
+   // Fast interval loop to derive remaining seconds from high-precision offset and transition refs
+   useEffect(() => {
+     const interval = setInterval(() => {
+-      const derived = deriveSeconds();
+-      setSecondsRemaining(derived);
+-
+-      // Automatic level progression when remaining time hits 0
+-      if (dbIsTimerRunningRef.current && derived === 0 && lastAutoProgressedLevelRef.current !== currentLevelIdxRef.current) {
+-        lastAutoProgressedLevelRef.current = currentLevelIdxRef.current;
+-        handleLevelUp();
+-      }
+-
+-      // Play warning at 60 seconds (only once per level)
+-      if (dbIsTimerRunningRef.current && derived === 60 && lastWarnedMinuteLevelRef.current !== currentLevelIdxRef.current) {
+-        speakAnnounce("¡Último minuto de nivel!");
+-        lastWarnedMinuteLevelRef.current = currentLevelIdxRef.current;
+-      }
++      if (tickRef.current) tickRef.current();
+     }, 100);
+ 
+     return () => clearInterval(interval);
+   }, []);

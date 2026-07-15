@@ -1,7 +1,7 @@
-# BRIEFING — 2026-07-15T05:15:20Z
+# BRIEFING — 2026-07-15T07:12:00Z
 
 ## Mission
-Spawn the Orchestrator to enhance the main dashboard with financial KPIs, enriched completed tournament cards, and expanded leaderboard with trends, and monitor progress.
+Spawn the Orchestrator to resolve tournament timer synchronization and level progression issues across all connected devices, and monitor progress.
 
 ## 🔒 My Identity
 - Archetype: sentinel
@@ -10,6 +10,8 @@ Spawn the Orchestrator to enhance the main dashboard with financial KPIs, enrich
 - Victory Auditor: 280884e4-4945-4ddb-81a9-3b80ededf042
 - Orchestrator (Phase 2): 6be457fe-56e8-42c7-abc6-32eff9ac797c
 - Victory Auditor (Phase 2): TBD
+- Orchestrator (Phase 3): 2451942c-5270-479b-99d4-b82eae321691
+- Victory Auditor (Phase 3): TBD
 
 ## 🔒 Key Constraints
 - No technical decisions — relay only
@@ -17,9 +19,9 @@ Spawn the Orchestrator to enhance the main dashboard with financial KPIs, enrich
 - Must not write code, analyze problems, or make any technical decisions
 
 ## User Context
-- **Last user request**: Enhance main dashboard (Dashboard.tsx) with advanced financial KPIs, detailed completed tournament history cards, and expanded leaderboard with trends.
+- **Last user request**: Resolve tournament timer synchronization and level progression issues across all devices with zero drift and resistance to refreshes.
 - **Pending clarifications**: none
-- **Delivered results**: Public blind structures explorer and payout simulator implemented on Landing.tsx
+- **Delivered results**: none for Phase 3 yet
 
 ## Project Status
 - **Phase**: in progress
@@ -31,5 +33,5 @@ Spawn the Orchestrator to enhance the main dashboard with financial KPIs, enrich
 
 ## Artifact Index
 - C:\Users\Usuario\Documents\antigravity\Poker torneos adm\ORIGINAL_REQUEST.md — Verbatim user request
-- task-29 — Cron 1: Progress Reporting
-- task-31 — Cron 2: Liveness Check
+- task-33 — Cron 1: Progress Reporting
+- task-35 — Cron 2: Liveness Check

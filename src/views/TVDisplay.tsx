@@ -22,6 +22,7 @@ interface TVState {
   is_break?: boolean;
   duration_minutes?: number;
   level_label?: string;
+  timer_reference_at?: string | null;
 }
 
 export const TVDisplay: React.FC = () => {
@@ -105,19 +106,50 @@ export const TVDisplay: React.FC = () => {
   };
 
   const clockOffsetRef = useRef<number>(0);
+  const dbSecondsRemainingRef = useRef<number>(0);
+  const dbIsTimerRunningRef = useRef<boolean>(false);
+  const dbTimerReferenceAtRef = useRef<string | null>(null);
+  const dbCurrentLevelIndexRef = useRef<number>(0);
+
+  const deriveSeconds = () => {
+    const seconds_remaining = dbSecondsRemainingRef.current;
+    const is_timer_running = dbIsTimerRunningRef.current;
+    const timer_reference_at = dbTimerReferenceAtRef.current;
+    const Offset = clockOffsetRef.current;
+
+    if (!is_timer_running) {
+      return seconds_remaining;
+    }
+
+    const resolvedRef = timer_reference_at || new Date(Date.now() + Offset).toISOString();
+    const RemainingMs = (seconds_remaining * 1000) - (Date.now() + Offset - new Date(resolvedRef).getTime());
+    const RemainingSeconds = Math.max(0, Math.ceil(RemainingMs / 1000));
+    return RemainingSeconds;
+  };
 
   // Helper: derive accurate seconds from a DB snapshot with timer_reference_at and client offset
   const deriveSecondsFromSnapshot = (dbSeconds: number, referenceAt: string | null | undefined, isRunning: boolean): number => {
-    if (!isRunning || !referenceAt) return dbSeconds;
-    const refTime = new Date(referenceAt).getTime();
+    if (!isRunning) return dbSeconds;
+    const resolvedRefAt = referenceAt || new Date(Date.now() + clockOffsetRef.current).toISOString();
+    const refTime = new Date(resolvedRefAt).getTime();
     const nowServer = Date.now() + clockOffsetRef.current;
     const elapsed = Math.floor((nowServer - refTime) / 1000);
     return Math.max(0, dbSeconds - elapsed);
   };
 
   const updateTVStateAndAnnounce = (newState: TVState) => {
-    setState(newState);
-    setLocalSeconds(newState.seconds_remaining);
+    const resolvedRef = newState.is_timer_running && !newState.timer_reference_at
+      ? new Date(Date.now() + clockOffsetRef.current).toISOString()
+      : (newState.timer_reference_at || null);
+
+    setState({ ...newState, timer_reference_at: resolvedRef });
+    
+    dbSecondsRemainingRef.current = newState.seconds_remaining;
+    dbIsTimerRunningRef.current = newState.is_timer_running;
+    dbTimerReferenceAtRef.current = resolvedRef;
+    dbCurrentLevelIndexRef.current = newState.current_level_index;
+    
+    setLocalSeconds(deriveSeconds());
     
     // Voice announcement if level changed
     if (newState.current_level_index !== lastAnnouncedLevelRef.current) {
@@ -200,11 +232,21 @@ export const TVDisplay: React.FC = () => {
       const averageStack = activeCount > 0 ? Math.round(totalChips / activeCount) : 0;
 
       // Compensate timer using the helper (deriveSecondsFromSnapshot)
+      const resolvedRef = tData.is_timer_running && !tData.timer_reference_at
+        ? new Date(Date.now() + clockOffsetRef.current).toISOString()
+        : (tData.timer_reference_at || null);
+
       const derivedSec = deriveSecondsFromSnapshot(
         tData.seconds_remaining,
-        tData.timer_reference_at,
+        resolvedRef,
         tData.is_timer_running
       );
+
+      // Populate transition refs with latest DB data
+      dbSecondsRemainingRef.current = tData.seconds_remaining;
+      dbIsTimerRunningRef.current = tData.is_timer_running;
+      dbTimerReferenceAtRef.current = resolvedRef;
+      dbCurrentLevelIndexRef.current = tData.current_level_index;
 
       const tvState: TVState = {
         tournament_name: tData.name,
@@ -225,7 +267,8 @@ export const TVDisplay: React.FC = () => {
         payouts: payouts,
         is_break: activeLevel?.is_break || false,
         duration_minutes: activeLevel?.duration || 0,
-        level_label: activeLevel?.is_break ? 'DESCANSO' : `NIVEL ${activeLevel?.level || 1}`
+        level_label: activeLevel?.is_break ? 'DESCANSO' : `NIVEL ${activeLevel?.level || 1}`,
+        timer_reference_at: resolvedRef
       };
 
       updateTVStateAndAnnounce(tvState);
@@ -241,27 +284,19 @@ export const TVDisplay: React.FC = () => {
 
     // Fetch server clock offset to compensate for client system clock drift
     const fetchOffset = async () => {
-      const url = import.meta.env.VITE_SUPABASE_URL;
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      if (!url || !anonKey || url === 'undefined') return;
       try {
+        if (!supabase) return;
         const start = Date.now();
-        const res = await fetch(`${url}/rest/v1/`, {
-          method: 'GET',
-          headers: {
-            'apikey': anonKey,
-            'Authorization': `Bearer ${anonKey}`
-          }
-        });
-        const dateHeader = res.headers.get('date');
-        if (dateHeader) {
-          const serverTime = new Date(dateHeader).getTime();
-          const rtt = Date.now() - start;
-          const clientTimeMid = start + rtt / 2;
-          clockOffsetRef.current = serverTime - clientTimeMid;
+        const { data, error } = await supabase.rpc('get_server_time');
+        const end = Date.now();
+        if (error) throw error;
+        if (data) {
+          const serverTime = new Date(data).getTime();
+          const rtt = end - start;
+          clockOffsetRef.current = serverTime + (rtt / 2) - end;
         }
       } catch (e) {
-        console.error('Failed to calculate server clock offset:', e);
+        console.error('Failed to calculate server clock offset via RPC:', e);
       }
     };
 
@@ -278,9 +313,14 @@ export const TVDisplay: React.FC = () => {
     channel.onmessage = (event) => {
       const { type, payload } = event.data;
       if (type === 'STATE_UPDATE') {
-        updateTVStateAndAnnounce(payload);
-      } else if (type === 'TICK') {
-        setLocalSeconds(payload.seconds_remaining);
+        const resolvedRef = payload.is_timer_running && !payload.timer_reference_at
+          ? new Date(Date.now() + clockOffsetRef.current).toISOString()
+          : (payload.timer_reference_at || null);
+        dbSecondsRemainingRef.current = payload.seconds_remaining;
+        dbIsTimerRunningRef.current = payload.is_timer_running;
+        dbTimerReferenceAtRef.current = resolvedRef;
+        dbCurrentLevelIndexRef.current = payload.current_level_index;
+        updateTVStateAndAnnounce({ ...payload, timer_reference_at: resolvedRef });
       }
     };
 
@@ -292,16 +332,36 @@ export const TVDisplay: React.FC = () => {
     if (tournamentId) {
       // Subscribe to realtime updates and broadcast channel
       realtimeChannel = supabase
-        .channel(`tournament-sync-${tournamentId}`, {
+        .channel('timer_sync', {
           config: {
             broadcast: { self: false }
           }
         })
-        .on('broadcast', { event: 'TICK' }, (payload: any) => {
-          setLocalSeconds(payload.payload.seconds_remaining);
+        .on('broadcast', { event: 'STATE_CHANGE' }, (payload: any) => {
+          const data = payload.payload;
+          if (data && data.tournament_id === tournamentId) {
+            const resolvedRef = data.is_timer_running && !data.timer_reference_at
+              ? new Date(Date.now() + clockOffsetRef.current).toISOString()
+              : (data.timer_reference_at || null);
+            dbSecondsRemainingRef.current = data.seconds_remaining;
+            dbIsTimerRunningRef.current = data.is_timer_running;
+            dbTimerReferenceAtRef.current = resolvedRef;
+            dbCurrentLevelIndexRef.current = data.current_level_index;
+            setLocalSeconds(deriveSeconds());
+          }
         })
         .on('broadcast', { event: 'STATE_UPDATE' }, (payload: any) => {
-          updateTVStateAndAnnounce(payload.payload);
+          const data = payload.payload;
+          if (data && data.tournament_id === tournamentId) {
+            const resolvedRef = data.is_timer_running && !data.timer_reference_at
+              ? new Date(Date.now() + clockOffsetRef.current).toISOString()
+              : (data.timer_reference_at || null);
+            dbSecondsRemainingRef.current = data.seconds_remaining;
+            dbIsTimerRunningRef.current = data.is_timer_running;
+            dbTimerReferenceAtRef.current = resolvedRef;
+            dbCurrentLevelIndexRef.current = data.current_level_index;
+            updateTVStateAndAnnounce({ ...data, timer_reference_at: resolvedRef });
+          }
         })
         .on(
           'postgres_changes',
@@ -311,7 +371,17 @@ export const TVDisplay: React.FC = () => {
             table: 'tournaments',
             filter: `id=eq.${tournamentId}`
           },
-          () => {
+          (payload: any) => {
+            const newData = payload.new;
+            if (newData) {
+              const resolvedRef = newData.is_timer_running && !newData.timer_reference_at
+                ? new Date(Date.now() + clockOffsetRef.current).toISOString()
+                : (newData.timer_reference_at || null);
+              dbSecondsRemainingRef.current = newData.seconds_remaining;
+              dbIsTimerRunningRef.current = newData.is_timer_running;
+              dbTimerReferenceAtRef.current = resolvedRef;
+              dbCurrentLevelIndexRef.current = newData.current_level_index;
+            }
             fetchStateFromDb(tournamentId);
           }
         )
@@ -341,16 +411,8 @@ export const TVDisplay: React.FC = () => {
 
     // Local tick interpolation for smooth clock transitions
     const interval = setInterval(() => {
-      const currentState = stateRef.current;
-      if (currentState && currentState.is_timer_running) {
-        setLocalSeconds(prev => {
-          if (prev <= 1) {
-            return 0;
-          }
-          return prev - 1;
-        });
-      }
-    }, 1000);
+      setLocalSeconds(deriveSeconds());
+    }, 100);
 
     return () => {
       clearInterval(interval);

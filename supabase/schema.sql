@@ -190,3 +190,12 @@ create policy "Anyone can check code validity" on public.league_codes
 
 create policy "Registering users can claim code" on public.league_codes
   for update using (true) with check (used_by = auth.uid());
+
+-- Provide high-precision server time
+create or replace function public.get_server_time()
+returns timestamp with time zone
+language sql
+stable
+as $$
+  select clock_timestamp();
+$$;

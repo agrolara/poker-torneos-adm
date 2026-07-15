@@ -75,39 +75,69 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
 
   // Helper: derive accurate seconds from a DB snapshot with timer_reference_at and client offset
   const deriveSecondsFromSnapshot = (dbSeconds: number, referenceAt: string | null | undefined, isRunning: boolean): number => {
-    if (!isRunning || !referenceAt) return dbSeconds;
-    const refTime = new Date(referenceAt).getTime();
+    if (!isRunning) return dbSeconds;
+    const resolvedRefAt = referenceAt || new Date(Date.now() + clockOffsetRef.current).toISOString();
+    const refTime = new Date(resolvedRefAt).getTime();
     const nowServer = Date.now() + clockOffsetRef.current;
     const elapsed = Math.floor((nowServer - refTime) / 1000);
     return Math.max(0, dbSeconds - elapsed);
   };
 
   const clockOffsetRef = useRef<number>(0);
+  const dbSecondsRemainingRef = useRef<number>(initialTournament.seconds_remaining);
+  const dbIsTimerRunningRef = useRef<boolean>(initialTournament.is_timer_running);
+  const dbTimerReferenceAtRef = useRef<string | null>(
+    initialTournament.is_timer_running && !initialTournament.timer_reference_at
+      ? new Date(Date.now() + clockOffsetRef.current).toISOString()
+      : (initialTournament.timer_reference_at || null)
+  );
+  const lastAutoProgressedLevelRef = useRef<number>(-1);
+
+  const deriveSeconds = () => {
+    const seconds_remaining = dbSecondsRemainingRef.current;
+    const is_timer_running = dbIsTimerRunningRef.current;
+    const timer_reference_at = dbTimerReferenceAtRef.current;
+    const Offset = clockOffsetRef.current;
+
+    if (!is_timer_running) {
+      return seconds_remaining;
+    }
+
+    const resolvedRef = timer_reference_at || new Date(Date.now() + Offset).toISOString();
+    const RemainingMs = (seconds_remaining * 1000) - (Date.now() + Offset - new Date(resolvedRef).getTime());
+    const RemainingSeconds = Math.max(0, Math.ceil(RemainingMs / 1000));
+    if (RemainingSeconds === 0) {
+      console.log("LOG deriveSeconds details:", {
+        seconds_remaining,
+        is_timer_running,
+        timer_reference_at,
+        Offset,
+        DateNow: Date.now(),
+        resolvedRef,
+        getTime: new Date(resolvedRef).getTime(),
+        RemainingMs,
+        RemainingSeconds
+      });
+    }
+    return RemainingSeconds;
+  };
 
   useEffect(() => {
     // Fetch server clock offset to compensate for client system clock drift
     const fetchOffset = async () => {
-      const url = import.meta.env.VITE_SUPABASE_URL;
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      if (!url || !anonKey || url === 'undefined') return;
       try {
+        if (!supabase) return;
         const start = Date.now();
-        const res = await fetch(`${url}/rest/v1/`, {
-          method: 'GET',
-          headers: {
-            'apikey': anonKey,
-            'Authorization': `Bearer ${anonKey}`
-          }
-        });
-        const dateHeader = res.headers.get('date');
-        if (dateHeader) {
-          const serverTime = new Date(dateHeader).getTime();
-          const rtt = Date.now() - start;
-          const clientTimeMid = start + rtt / 2;
-          clockOffsetRef.current = serverTime - clientTimeMid;
+        const { data, error } = await supabase.rpc('get_server_time');
+        const end = Date.now();
+        if (error) throw error;
+        if (data) {
+          const serverTime = new Date(data).getTime();
+          const rtt = end - start;
+          clockOffsetRef.current = serverTime + (rtt / 2) - end;
         }
       } catch (e) {
-        console.error('Failed to calculate server clock offset:', e);
+        console.error('Failed to calculate server clock offset via RPC:', e);
       }
     };
 
@@ -127,7 +157,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
 
     // Supabase Realtime subscription for cross-device sync and broadcast channel
     const channel = supabase
-      .channel(`tournament-sync-${initialTournament.id}`, {
+      .channel('timer_sync', {
         config: {
           broadcast: { self: false }
         }
@@ -144,15 +174,22 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           const newData = payload.new;
           if (!newData) return;
           
+          // Update transition refs from incoming changes
+          dbSecondsRemainingRef.current = newData.seconds_remaining;
+          dbIsTimerRunningRef.current = newData.is_timer_running;
+          dbTimerReferenceAtRef.current = newData.is_timer_running && !newData.timer_reference_at
+            ? new Date(Date.now() + clockOffsetRef.current).toISOString()
+            : (newData.timer_reference_at || null);
+          
           // Compensate with calculated clock offset
           const derivedSeconds = deriveSecondsFromSnapshot(
             newData.seconds_remaining,
-            newData.timer_reference_at,
+            dbTimerReferenceAtRef.current,
             newData.is_timer_running
           );
           
           // Update local state from remote changes
-          setTournament(prev => ({ ...prev, ...newData }));
+          setTournament(prev => ({ ...prev, ...newData, timer_reference_at: dbTimerReferenceAtRef.current }));
           setSecondsRemaining(derivedSeconds);
           setIsRunning(newData.is_timer_running);
           setCurrentLevelIdx(newData.current_level_index);
@@ -175,59 +212,38 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     };
   }, []);
 
-  // Sync Timer with local state changes and save to database every second
+  // Fast interval loop to derive remaining seconds from high-precision offset and transition refs
   useEffect(() => {
-    if (isRunning) {
-      timerRef.current = setInterval(() => {
-        setSecondsRemaining(prev => {
-          if (prev <= 1) {
-            return 0;
-          }
-          const nextSec = prev - 1;
-          
-          // Save to database every single second to maintain second-to-second persistency
-          saveTimerStateToDb({
-            seconds_remaining: nextSec,
-            is_timer_running: true,
-            current_level_index: currentLevelIdxRef.current
-          });
-
-          // Send simple tick sync locally
-          broadcastChannelRef.current?.postMessage({
-            type: 'TICK',
-            payload: { seconds_remaining: nextSec }
-          });
-          // Send simple tick sync globally via WebSocket Broadcast
-          realtimeChannelRef.current?.send({
-            type: 'broadcast',
-            event: 'TICK',
-            payload: { seconds_remaining: nextSec }
-          });
-          return nextSec;
+    const interval = setInterval(() => {
+      const derived = deriveSeconds();
+      if (derived === 0) {
+        console.log("LOG INTERVAL TICK: derived is 0", {
+          isRunning: dbIsTimerRunningRef.current,
+          derived,
+          lastAutoProgressed: lastAutoProgressedLevelRef.current,
+          currentLevelIdx: currentLevelIdxRef.current,
+          structure: !!structure,
+          clockOffset: clockOffsetRef.current
         });
-      }, 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isRunning]);
-
-  // Monitor when secondsRemaining hits 0 or 60 to trigger level up or warning
-  useEffect(() => {
-    if (isRunning) {
-      if (secondsRemaining === 0) {
-        handleLevelUp();
-      } else if (secondsRemaining === 60 && lastWarnedMinuteLevelRef.current !== currentLevelIdx) {
-        speakAnnounce("¡Último minuto de nivel!");
-        lastWarnedMinuteLevelRef.current = currentLevelIdx;
       }
-    }
-  }, [secondsRemaining, isRunning, currentLevelIdx]);
+      setSecondsRemaining(derived);
 
-  // Removed periodic 5-second database save hook in favor of second-to-second saves
+      // Automatic level progression when remaining time hits 0
+      if (dbIsTimerRunningRef.current && derived === 0 && lastAutoProgressedLevelRef.current !== currentLevelIdxRef.current) {
+        console.log("LOG: Auto progression condition met, calling handleLevelUp");
+        lastAutoProgressedLevelRef.current = currentLevelIdxRef.current;
+        handleLevelUp();
+      }
+
+      // Play warning at 60 seconds (only once per level)
+      if (dbIsTimerRunningRef.current && derived === 60 && lastWarnedMinuteLevelRef.current !== currentLevelIdxRef.current) {
+        speakAnnounce("¡Último minuto de nivel!");
+        lastWarnedMinuteLevelRef.current = currentLevelIdxRef.current;
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchTournamentData = async () => {
     try {
@@ -240,12 +256,21 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
         .single();
       
       if (tData) {
-        setTournament(tData);
+        const resolvedRef = tData.is_timer_running && !tData.timer_reference_at
+          ? new Date(Date.now() + clockOffsetRef.current).toISOString()
+          : (tData.timer_reference_at || null);
+        
+        setTournament({ ...tData, timer_reference_at: resolvedRef });
         if (isFirstLoadRef.current) {
+          // Initialize transition refs
+          dbSecondsRemainingRef.current = tData.seconds_remaining;
+          dbIsTimerRunningRef.current = tData.is_timer_running;
+          dbTimerReferenceAtRef.current = resolvedRef;
+
           // Use derived seconds to compensate for time elapsed since last DB save
           const derivedSec = deriveSecondsFromSnapshot(
             tData.seconds_remaining,
-            tData.timer_reference_at,
+            resolvedRef,
             tData.is_timer_running
           );
           setSecondsRemaining(derivedSec);
@@ -294,7 +319,9 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       setLogs(logsData || []);
       
       checkTableBalance(pData || []);
+      console.log("LOG: fetchTournamentData successfully completed!");
     } catch (err) {
+      console.log("LOG: fetchTournamentData failed with error:", err);
       console.error(err);
     } finally {
       setLoading(false);
@@ -315,8 +342,9 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     const statePayload = {
       tournament_name: tournament.name,
       status: tournament.status,
-      seconds_remaining: secondsRemaining,
-      is_timer_running: isRunning,
+      seconds_remaining: dbSecondsRemainingRef.current,
+      is_timer_running: dbIsTimerRunningRef.current,
+      timer_reference_at: dbTimerReferenceAtRef.current,
       current_level_index: currentLevelIdx,
       small_blind: activeLevel?.small_blind || 0,
       big_blind: activeLevel?.big_blind || 0,
@@ -331,7 +359,8 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       payouts: payouts,
       is_break: activeLevel?.is_break || false,
       duration_minutes: activeLevel?.duration || 0,
-      level_label: activeLevel?.is_break ? 'DESCANSO' : `NIVEL ${activeLevel?.level || 1}`
+      level_label: activeLevel?.is_break ? 'DESCANSO' : `NIVEL ${activeLevel?.level || 1}`,
+      tournament_id: tournament.id
     };
 
     // 1. Local tabs sync
@@ -348,25 +377,42 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     });
   };
 
-  // Sync Broadcast state whenever relevant values change
+  // Sync Broadcast state whenever relevant values change (exclude secondsRemaining to avoid per-second traffic)
   useEffect(() => {
     if (!loading) {
       broadcastState();
     }
-  }, [secondsRemaining, isRunning, currentLevelIdx, players, tournament]);
+  }, [isRunning, currentLevelIdx, players, tournament]);
 
   const saveTimerStateToDb = async (overrides: Partial<Tournament> = {}) => {
     try {
+      const nowServer = new Date(Date.now() + clockOffsetRef.current).toISOString();
+      const payload = {
+        seconds_remaining: overrides.seconds_remaining ?? dbSecondsRemainingRef.current,
+        is_timer_running: overrides.is_timer_running ?? dbIsTimerRunningRef.current,
+        current_level_index: overrides.current_level_index ?? currentLevelIdxRef.current,
+        timer_reference_at: overrides.timer_reference_at ?? nowServer,
+        ...overrides
+      };
+
       await supabase
         .from('tournaments')
-        .update({
-          seconds_remaining: overrides.seconds_remaining ?? secondsRemainingRef.current,
-          is_timer_running: overrides.is_timer_running ?? isRunningRef.current,
-          current_level_index: overrides.current_level_index ?? currentLevelIdxRef.current,
-          timer_reference_at: new Date().toISOString(),
-          ...overrides
-        })
+        .update(payload)
         .eq('id', tournament.id);
+
+      // On transitions, writes the state (including timer_reference_at fetched from get_server_time RPC or calculated high-precision server time) to DB,
+      // and broadcasts the state change over channel `timer_sync`, event `STATE_CHANGE`.
+      realtimeChannelRef.current?.send({
+        type: 'broadcast',
+        event: 'STATE_CHANGE',
+        payload: {
+          seconds_remaining: payload.seconds_remaining,
+          is_timer_running: payload.is_timer_running,
+          current_level_index: payload.current_level_index,
+          timer_reference_at: payload.timer_reference_at,
+          tournament_id: tournament.id
+        }
+      });
     } catch (e) {
       console.error('Error saving timer state:', e);
     }
@@ -374,19 +420,41 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
 
   const handlePlayPause = () => {
     const nextRunning = !isRunning;
+    const nowServer = new Date(Date.now() + clockOffsetRef.current).toISOString();
+    const currentDerived = secondsRemainingRef.current;
+
+    dbIsTimerRunningRef.current = nextRunning;
+    dbTimerReferenceAtRef.current = nowServer;
+    dbSecondsRemainingRef.current = currentDerived;
+
     setIsRunning(nextRunning);
-    saveTimerStateToDb({ is_timer_running: nextRunning });
+    saveTimerStateToDb({
+      is_timer_running: nextRunning,
+      seconds_remaining: currentDerived,
+      timer_reference_at: nowServer
+    });
     
     // Log action
     addLog('timer_action', { message: nextRunning ? 'Reloj reanudado' : 'Reloj pausado' });
   };
 
   const handleLevelUp = () => {
+    console.log("LOG: handleLevelUp entered", {
+      structure: !!structure,
+      currentLevelIdx: currentLevelIdxRef.current
+    });
     if (!structure) return;
     const lvls = getLevelsArray();
-    const nextIdx = currentLevelIdx + 1;
+    const nextIdx = currentLevelIdxRef.current + 1;
+    const nowServer = new Date(Date.now() + clockOffsetRef.current).toISOString();
+
     if (nextIdx < lvls.length) {
       const nextLevel = lvls[nextIdx];
+
+      dbIsTimerRunningRef.current = isRunningRef.current;
+      dbTimerReferenceAtRef.current = nowServer;
+      dbSecondsRemainingRef.current = nextLevel.duration * 60;
+
       setCurrentLevelIdx(nextIdx);
       setSecondsRemaining(nextLevel.duration * 60);
       
@@ -401,20 +469,37 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
 
       saveTimerStateToDb({
         current_level_index: nextIdx,
-        seconds_remaining: nextLevel.duration * 60
+        seconds_remaining: nextLevel.duration * 60,
+        timer_reference_at: nowServer
       });
     } else {
+      dbIsTimerRunningRef.current = false;
+      dbTimerReferenceAtRef.current = nowServer;
+      dbSecondsRemainingRef.current = 0;
+
       setIsRunning(false);
-      saveTimerStateToDb({ is_timer_running: false });
+      setSecondsRemaining(0);
+
+      saveTimerStateToDb({
+        is_timer_running: false,
+        seconds_remaining: 0,
+        timer_reference_at: nowServer
+      });
       alert('¡Has completado todos los niveles de ciegas!');
     }
   };
 
   const handleLevelDown = () => {
-    if (!structure || currentLevelIdx === 0) return;
+    if (!structure || currentLevelIdxRef.current === 0) return;
     const lvls = getLevelsArray();
-    const prevIdx = currentLevelIdx - 1;
+    const prevIdx = currentLevelIdxRef.current - 1;
     const prevLevel = lvls[prevIdx];
+    const nowServer = new Date(Date.now() + clockOffsetRef.current).toISOString();
+
+    dbIsTimerRunningRef.current = isRunningRef.current;
+    dbTimerReferenceAtRef.current = nowServer;
+    dbSecondsRemainingRef.current = prevLevel.duration * 60;
+
     setCurrentLevelIdx(prevIdx);
     setSecondsRemaining(prevLevel.duration * 60);
     
@@ -426,7 +511,8 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
 
     saveTimerStateToDb({
       current_level_index: prevIdx,
-      seconds_remaining: prevLevel.duration * 60
+      seconds_remaining: prevLevel.duration * 60,
+      timer_reference_at: nowServer
     });
   };
 
@@ -1054,9 +1140,10 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   };
 
   const getLevelsArray = (): Level[] => {
-    if (!structure) return [];
-    if (Array.isArray(structure.levels)) return structure.levels;
-    return (structure.levels as any).levels || [];
+    const s = structure;
+    if (!s) return [];
+    if (Array.isArray(s.levels)) return s.levels;
+    return (s.levels as any).levels || [];
   };
 
   // Helper selectors
