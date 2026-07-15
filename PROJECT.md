@@ -18,11 +18,16 @@ We will implement the public structures explorer directly in `src/views/Landing.
 | M4 | Levels & Breaks Display | Render levels and breaks for the selected structure, highlighting breaks in green. | M3 | DONE (Conv: 5eaff998-822b-4060-a889-c02a6b915fc4) |
 | M5 | Payout Simulator | Add an interactive payout simulator calculating Gross Pool, Rake, Net Pool, and exact prize distributions in real-time. | M4 | DONE (Conv: 5eaff998-822b-4060-a889-c02a6b915fc4) |
 | M6 | E2E Test Verification | Ensure 100% of E2E tests pass, then run white-box adversarial coverage checks (Tier 5) and resolve any gaps. | M1, M5 | DONE |
+| M7 | Phase 2 Test Track | Implement opaque-box test cases for the advanced dashboard features (KPIs, podios, expanded leaderboard trends) in a new test file. | None | PLANNED |
+| M8 | Dashboard Enhancements | Implement advanced KPIs, completed tournament mini-podios, and expanded leaderboard with chronological trend calculations. | M7 | PLANNED |
+| M9 | Phase 2 Verification & Audit | Run all tests, perform challenger verification, and execute the forensic audit check to verify solution integrity. | M8 | PLANNED |
 
 ## Code Layout
 - `src/views/Landing.tsx`: Implementation of landing page and the public structures explorer modal.
+- `src/views/Dashboard.tsx`: Main dashboard with financial KPIs, tournament lists, and championship leaderboard.
 - `src/__tests__/`: Folder containing test files.
 - `src/__tests__/LandingExplorer.test.tsx`: E2E/Integration tests for the structures explorer.
+- `src/__tests__/DashboardEnhancement.test.tsx`: E2E/Integration tests for Phase 2 dashboard enhancements.
 - `supabase/migrations/`: Database migration scripts if needed for RLS updates.
 - `PROJECT.md`: Main project tracking and architecture document.
 - `TEST_INFRA.md`: Details of the test cases and setup (created by Testing Track).

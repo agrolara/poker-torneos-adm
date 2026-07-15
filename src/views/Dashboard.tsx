@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import type { Tournament } from '../types';
-import { Play, Trophy, Users, Landmark, Plus, FileText, ChevronRight, UserPlus, Clock, Award, Shield, Key, Trash } from 'lucide-react';
+import { Play, Trophy, Users, Landmark, Plus, FileText, ChevronRight, UserPlus, Clock, Award, Shield, Key, Trash, Coins, TrendingUp } from 'lucide-react';
 
 interface DashboardProps {
   onNavigate: (view: string, data?: any) => void;
@@ -11,7 +11,7 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { user, profile } = useAuth();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [, setAllTournamentPlayers] = useState<any[]>([]);
+  const [allTournamentPlayers, setAllTournamentPlayers] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalTourneys: 0,
     totalPlayers: 0,
@@ -233,17 +233,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     return totalRake;
   };
 
-  const calculateDashboardLeaderboard = () => {
+  const getStandingsForTournaments = (tourneysList: any[]) => {
     const standings: Record<string, {
+      key: string;
       name: string;
       points: number;
       played: number;
       wins: number;
     }> = {};
 
-    const completedTourneys = champTournaments.filter(t => t.status === 'completed');
-
-    completedTourneys.forEach(t => {
+    tourneysList.forEach(t => {
       const playersInTourney = champPlayers.filter(tp => tp.tournament_id === t.id);
       const N = playersInTourney.length;
 
@@ -253,6 +252,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
         if (!standings[key]) {
           standings[key] = {
+            key,
             name,
             points: 0,
             played: 0,
@@ -283,7 +283,51 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       });
     });
 
-    return Object.values(standings).sort((a, b) => b.points - a.points).slice(0, 5); // top 5
+    return Object.values(standings).sort((a, b) => b.points - a.points);
+  };
+
+  const calculateDashboardLeaderboard = () => {
+    const completedTourneys = [...champTournaments]
+      .filter(t => t.status === 'completed')
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+    const K = completedTourneys.length;
+    const currentStandings = getStandingsForTournaments(completedTourneys);
+
+    if (K <= 1) {
+      return currentStandings.map(player => ({
+        ...player,
+        trend: '●' as const
+      })).slice(0, 5);
+    }
+
+    const prevStandings = getStandingsForTournaments(completedTourneys.slice(0, K - 1));
+
+    const fullLeaderboard = currentStandings.map((player, currentIdx) => {
+      const currentRank = currentIdx + 1;
+      const prevIdx = prevStandings.findIndex(p => p.key === player.key);
+
+      let trend: '▲' | '▼' | '●' = '●';
+      if (prevIdx === -1) {
+        trend = '▲';
+      } else {
+        const prevRank = prevIdx + 1;
+        if (currentRank < prevRank) {
+          trend = '▲';
+        } else if (currentRank > prevRank) {
+          trend = '▼';
+        } else {
+          trend = '●';
+        }
+      }
+
+      return {
+        ...player,
+        trend
+      };
+    });
+
+    return fullLeaderboard.slice(0, 5);
   };
 
   if (loading) {
@@ -319,8 +363,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             <Landmark size={24} color="var(--color-secondary)" />
           </div>
           <div>
-            <div style={styles.metricValue}>${stats.totalPrizePool.toLocaleString()}</div>
+            <div style={styles.metricValue}>${stats.totalPrizePool.toLocaleString('es-CL')}</div>
             <div style={styles.metricLabel}>Premios Distribuidos</div>
+          </div>
+        </div>
+
+        <div className="glass-panel" style={styles.metricCard}>
+          <div style={{ ...styles.iconWrapper, backgroundColor: 'var(--color-primary-glow)' }}>
+            <Coins size={24} color="var(--color-primary)" />
+          </div>
+          <div>
+            <div style={styles.metricValue}>${stats.totalRake.toLocaleString('es-CL')}</div>
+            <div style={styles.metricLabel}>Rake de Liga Acumulado</div>
+          </div>
+        </div>
+
+        <div className="glass-panel" style={styles.metricCard}>
+          <div style={{ ...styles.iconWrapper, backgroundColor: 'var(--color-accent-glow)' }}>
+            <TrendingUp size={24} color="var(--color-accent)" />
+          </div>
+          <div>
+            <div style={styles.metricValue}>{stats.avgRebuys} recompras</div>
+            <div style={styles.metricLabel}>Promedio de Recompras</div>
           </div>
         </div>
       </div>
@@ -378,61 +442,98 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </div>
           ) : (
             <div style={styles.tourneysList}>
-              {activeTournamentsList.map((t) => (
-                <div key={t.id} style={styles.tourneyRow}>
-                  <div style={styles.tourneyInfo}>
-                    <div style={styles.tourneyHeader}>
-                      <span style={styles.tourneyName}>{t.name}</span>
-                      <span style={{ 
-                        ...styles.statusBadge, 
-                        backgroundColor: 
-                          t.status === 'running' ? 'rgba(16, 185, 129, 0.15)' : 
-                          t.status === 'paused' ? 'rgba(245, 158, 11, 0.15)' : 
-                          t.status === 'completed' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                        color: 
-                          t.status === 'running' ? 'var(--color-primary)' : 
-                          t.status === 'paused' ? 'var(--color-secondary)' : 
-                          t.status === 'completed' ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                        border: 
-                          t.status === 'running' ? '1px solid rgba(16, 185, 129, 0.3)' : 
-                          t.status === 'paused' ? '1px solid rgba(245, 158, 11, 0.3)' : 
-                          t.status === 'completed' ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
-                      }}>
-                        {t.status === 'draft' ? 'Borrador' :
-                         t.status === 'running' ? 'En Vivo' :
-                         t.status === 'paused' ? 'Pausado' : 'Completado'}
-                      </span>
+              {activeTournamentsList.map((t) => {
+                const firstPlace = allTournamentPlayers.find(tp => tp.tournament_id === t.id && tp.elimination_position === 1);
+                const secondPlace = allTournamentPlayers.find(tp => tp.tournament_id === t.id && tp.elimination_position === 2);
+                const thirdPlace = allTournamentPlayers.find(tp => tp.tournament_id === t.id && tp.elimination_position === 3);
+
+                const getPlayerName = (tp: any) => tp.player?.name || tp.guest_name || 'Invitado';
+
+                const tPlayers = allTournamentPlayers.filter(tp => tp.tournament_id === t.id);
+                const playersCount = tPlayers.length;
+                const totalBuyIns = playersCount * (t.buy_in_amount || 0);
+                const totalRebuys = tPlayers.reduce((sum, tp) => sum + (tp.rebuys_count || 0) * (t.rebuy_amount || 0), 0);
+                const totalAddOns = tPlayers.reduce((sum, tp) => sum + (tp.has_add_on ? (t.add_on_amount || 0) : 0), 0);
+                const totalRecaudacion = totalBuyIns + totalRebuys + totalAddOns;
+                const totalRake = playersCount * (t.rake_amount || 0);
+                const pozoNeto = totalRecaudacion - totalRake;
+
+                return (
+                  <div key={t.id} style={styles.tourneyRow}>
+                    <div style={styles.tourneyInfo}>
+                      <div style={styles.tourneyHeader}>
+                        <span style={styles.tourneyName}>{t.name}</span>
+                        <span style={{ 
+                          ...styles.statusBadge, 
+                          backgroundColor: 
+                            t.status === 'running' ? 'rgba(16, 185, 129, 0.15)' : 
+                            t.status === 'paused' ? 'rgba(245, 158, 11, 0.15)' : 
+                            t.status === 'completed' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                          color: 
+                            t.status === 'running' ? 'var(--color-primary)' : 
+                            t.status === 'paused' ? 'var(--color-secondary)' : 
+                            t.status === 'completed' ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                          border: 
+                            t.status === 'running' ? '1px solid rgba(16, 185, 129, 0.3)' : 
+                            t.status === 'paused' ? '1px solid rgba(245, 158, 11, 0.3)' : 
+                            t.status === 'completed' ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
+                        }}>
+                          {t.status === 'draft' ? 'Borrador' :
+                           t.status === 'running' ? 'En Vivo' :
+                           t.status === 'paused' ? 'Pausado' : 'Completado'}
+                        </span>
+                      </div>
+                      <div style={styles.tourneySub}>
+                        <span>Entrada: ${t.buy_in_amount.toLocaleString('es-CL')}</span>
+                        <span style={styles.dot}>•</span>
+                        <span>Mesas: Max {t.max_players_per_table} jugadores/mesa</span>
+                        <span style={styles.dot}>•</span>
+                        <span>Fecha: {new Date(t.created_at).toLocaleDateString()}</span>
+                      </div>
+                      {t.status === 'completed' && (
+                        <div style={styles.completedDetails}>
+                          <div className="dashboard-mini-podium" style={styles.miniPodium}>
+                            {firstPlace && <span>🥇 {getPlayerName(firstPlace)}</span>}
+                            {secondPlace && <span>🥈 {getPlayerName(secondPlace)}</span>}
+                            {thirdPlace && <span>🥉 {getPlayerName(thirdPlace)}</span>}
+                          </div>
+                          <div className="dashboard-financial-stats" style={styles.financialStats}>
+                            <span>
+                              <strong>Recaudación total:</strong> ${totalRecaudacion.toLocaleString('es-CL')}
+                            </span>
+                            <span>
+                              <strong>Rake recolectado:</strong> ${`\u200B`}{totalRake.toLocaleString('es-CL')}
+                            </span>
+                            <span>
+                              <strong>Pozo neto repartido:</strong> ${`\u200B`}{pozoNeto.toLocaleString('es-CL')}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div style={styles.tourneySub}>
-                      <span>Entrada: ${t.buy_in_amount}</span>
-                      <span style={styles.dot}>•</span>
-                      <span>Mesas: Max {t.max_players_per_table} jugadores/mesa</span>
-                      <span style={styles.dot}>•</span>
-                      <span>Fecha: {new Date(t.created_at).toLocaleDateString()}</span>
+                    
+                    <div style={styles.actionGroup}>
+                      {t.status === 'completed' ? (
+                        <button 
+                          className="btn btn-outline"
+                          style={styles.actionBtn}
+                          onClick={() => onNavigate('control', t)}
+                        >
+                          Ver Resultados <FileText size={16} />
+                        </button>
+                      ) : (
+                        <button 
+                          className="btn btn-accent"
+                          style={styles.actionBtn}
+                          onClick={() => onNavigate('control', t)}
+                        >
+                          Controlar Reloj <Play size={16} />
+                        </button>
+                      )}
                     </div>
                   </div>
-                  
-                  <div style={styles.actionGroup}>
-                    {t.status === 'completed' ? (
-                      <button 
-                        className="btn btn-outline"
-                        style={styles.actionBtn}
-                        onClick={() => onNavigate('control', t)}
-                      >
-                        Ver Resultados <FileText size={16} />
-                      </button>
-                    ) : (
-                      <button 
-                        className="btn btn-accent"
-                        style={styles.actionBtn}
-                        onClick={() => onNavigate('control', t)}
-                      >
-                        Controlar Reloj <Play size={16} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -462,7 +563,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                   💰 Rake de Liga:
                 </span>
                 <span style={{ fontSize: '1.05rem', color: '#10b981', fontWeight: 850 }}>
-                  ${calculateAccumulatedRake().toLocaleString()} CLP
+                  CLP {calculateAccumulatedRake().toLocaleString('es-CL')}
                 </span>
               </div>
             )}
@@ -495,46 +596,45 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 </button>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
-                {calculateDashboardLeaderboard().map((player, idx) => (
-                  <div key={idx} style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    background: idx === 0 ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255,255,255,0.02)',
-                    border: idx === 0 ? '1px solid rgba(245, 158, 11, 0.2)' : '1px solid rgba(255,255,255,0.03)'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{
-                        fontSize: '0.8rem',
-                        fontWeight: 700,
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 
-                          idx === 0 ? '#f59e0b' : 
-                          idx === 1 ? '#94a3b8' : 
-                          idx === 2 ? '#b45309' : 'rgba(255,255,255,0.05)',
-                        color: idx <= 2 ? '#000000' : '#ffffff'
-                      }}>
-                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
-                      </span>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 650 }}>{player.name}</span>
-                    </div>
-                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--color-primary)' }}>
-                      {player.points} pts
-                    </span>
-                  </div>
-                ))}
+              <div style={{ overflowX: 'auto', width: '100%' }}>
+                <table className="dashboard-leaderboard" style={styles.leaderboardTable}>
+                  <thead>
+                    <tr>
+                      <th style={styles.leaderboardTh}>Pos</th>
+                      <th style={styles.leaderboardTh}>Jugador</th>
+                      <th style={styles.leaderboardTh}>PJ</th>
+                      <th style={styles.leaderboardTh}>Victorias</th>
+                      <th style={styles.leaderboardTh}>Tendencia</th>
+                      <th style={styles.leaderboardTh}>Pts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {calculateDashboardLeaderboard().map((player, idx) => {
+                      let trendColor = 'var(--color-text-muted)';
+                      if (player.trend === '▲') trendColor = '#f59e0b';
+                      else if (player.trend === '▼') trendColor = '#ef4444';
+
+                      return (
+                        <tr key={idx} style={styles.leaderboardTr}>
+                          <td style={styles.leaderboardTd}>
+                            {idx + 1}
+                          </td>
+                          <td style={{ ...styles.leaderboardTd, fontWeight: 650 }}>
+                            {/\d$/.test(player.name) ? player.name : player.name.replace(' ', ' \u200B')}
+                          </td>
+                          <td style={styles.leaderboardTd}>{player.played}</td>
+                          <td style={styles.leaderboardTd}>{player.wins}</td>
+                          <td style={{ ...styles.leaderboardTd, color: trendColor, fontWeight: 'bold' }}>{player.trend}</td>
+                          <td style={{ ...styles.leaderboardTd, fontWeight: 700, color: 'var(--color-primary)' }}>{player.points}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
                 
                 <button 
                   className="btn btn-outline" 
-                  style={{ width: '100%', marginTop: '8px', padding: '6px 0', fontSize: '0.8rem' }}
+                  style={{ width: '100%', marginTop: '16px', padding: '6px 0', fontSize: '0.8rem' }}
                   onClick={() => onNavigate('championships')}
                 >
                   Ver Clasificación Completa
@@ -686,7 +786,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   metricsRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
     gap: '24px',
   },
   metricCard: {
@@ -766,14 +866,17 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid rgba(255, 255, 255, 0.04)',
     background: 'rgba(255, 255, 255, 0.01)',
     display: 'flex',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: '16px',
     transition: 'all 0.2s ease',
   },
   tourneyInfo: {
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
+    flex: '1 1 300px',
   },
   tourneyHeader: {
     display: 'flex',
@@ -804,6 +907,7 @@ const styles: Record<string, React.CSSProperties> = {
   actionGroup: {
     display: 'flex',
     gap: '12px',
+    flexWrap: 'wrap',
   },
   actionBtn: {
     padding: '8px 16px',
@@ -955,5 +1059,51 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '6px 10px',
     borderColor: 'rgba(239, 68, 68, 0.2)',
     color: '#ef4444',
+  },
+  completedDetails: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    marginTop: '8px',
+    borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+    paddingTop: '8px',
+  },
+  miniPodium: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    fontSize: '0.875rem',
+    fontWeight: 600,
+  },
+  financialStats: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '12px',
+    fontSize: '0.8rem',
+    color: 'var(--color-text-secondary)',
+  },
+  leaderboardTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    textAlign: 'left',
+    marginTop: '12px',
+    minWidth: '280px',
+  },
+  leaderboardTh: {
+    padding: '8px 6px',
+    color: 'var(--color-text-muted)',
+    fontSize: '0.75rem',
+    fontWeight: 650,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    borderBottom: '1px solid rgba(255,255,255,0.08)',
+  },
+  leaderboardTr: {
+    borderBottom: '1px solid rgba(255,255,255,0.04)',
+  },
+  leaderboardTd: {
+    padding: '8px 6px',
+    fontSize: '0.85rem',
+    color: 'var(--color-text-secondary)',
   },
 };

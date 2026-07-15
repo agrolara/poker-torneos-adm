@@ -514,6 +514,37 @@ input:checked + .slider:before {
     width: 100% !important;
     justify-content: center !important;
   }
+
+  /* Dashboard Leaderboard: hide PJ & Victorias columns on small screens */
+  .dashboard-leaderboard th:nth-child(3),
+  .dashboard-leaderboard td:nth-child(3),
+  .dashboard-leaderboard th:nth-child(4),
+  .dashboard-leaderboard td:nth-child(4) {
+    display: none !important;
+  }
+
+  /* Dashboard mini-podium: stack vertically */
+  .dashboard-mini-podium {
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+
+  /* Dashboard financial stats: stack vertically */
+  .dashboard-financial-stats {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+
+  /* Metrics cards: compact on tiny screens */
+  .dashboard-metrics-grid .glass-panel {
+    padding: 16px !important;
+    gap: 14px !important;
+  }
+
+  .dashboard-metrics-grid .glass-panel div[style*="fontSize: 2rem"],
+  .dashboard-metrics-grid .glass-panel div:first-child + div > div:first-child {
+    font-size: 1.4rem !important;
+  }
 }
 
 /* Premium WhatsApp Pulse Button */

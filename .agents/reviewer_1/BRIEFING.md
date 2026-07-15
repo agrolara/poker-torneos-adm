@@ -1,44 +1,48 @@
-# BRIEFING — 2026-07-15T05:03:00Z
+# BRIEFING — 2026-07-15T05:28:30Z
 
 ## Mission
-Examine the public blind structures explorer and simulator changes in Landing.tsx and schema.sql for correctness, completeness, robustness, and conformance.
+Review the Phase 2 Dashboard enhancements in `src/views/Dashboard.tsx` to verify correctness, quality, adversarial robustness, and ensure all tests pass.
 
 ## 🔒 My Identity
-- Archetype: reviewer_and_adversarial_critic
+- Archetype: reviewer-critic
 - Roles: reviewer, critic
-- Working directory: C:\Users\Usuario\Documents\antigravity\Poker torneos adm\.agents\reviewer_1\
-- Original parent: 75cb87ce-c3cb-49bf-827e-f908ce588cd4
-- Milestone: Review Landing explorer & simulator and schema.sql
+- Working directory: C:\Users\Usuario\Documents\antigravity\Poker torneos adm\.agents\reviewer_1
+- Original parent: 6be457fe-56e8-42c7-abc6-32eff9ac797c
+- Milestone: Phase 2 Dashboard review
 - Instance: 1 of 1
 
 ## 🔒 Key Constraints
-- Review-only — do NOT modify implementation code
+- Review-only — do NOT modify implementation code.
+- Report all findings and verification results.
+- Must ensure all 46 vitest tests pass.
+- Write findings to handoff.md and report to caller.
 
 ## Current Parent
-- Conversation ID: 75cb87ce-c3cb-49bf-827e-f908ce588cd4
-- Updated: yes
+- Conversation ID: 6be457fe-56e8-42c7-abc6-32eff9ac797c
+- Updated: not yet
 
 ## Review Scope
-- **Files to review**: src/views/Landing.tsx, supabase/schema.sql
-- **Interface contracts**: PROJECT.md
-- **Review criteria**: correctness, completeness, robustness, interface conformance, security (RLS)
-
-## Review Checklist
-- **Items reviewed**: src/views/Landing.tsx, supabase/schema.sql, src/__tests__/LandingExplorer.test.tsx, PROJECT.md, ORIGINAL_REQUEST.md, package.json
-- **Verdict**: APPROVE
-- **Unverified claims**: None
-
-## Attack Surface
-- **Hypotheses tested**: division by zero, floating point player count input, negative buy-in/players count inputs, RLS bypass check, flexbox mobile stacking layout.
-- **Vulnerabilities found**: None (only a minor note on possible "NaN" output for formatAmount if level structure has undefined small_blind, but no crash).
-- **Untested angles**: None
+- **Files to review**: `src/views/Dashboard.tsx`
+- **Interface contracts**: Dashboard requirements (KPIs, Podium/Finances, Leaderboard/Trends, Responsiveness)
+- **Review criteria**: Correctness, quality, lack of regressions, adversarial robustness
 
 ## Key Decisions Made
-- Checked all E2E tests (38/38 passed).
-- Built project successfully.
-- Approved implementation and policies.
+- Confirmed that all 46 tests pass successfully (cmd run execution exit code 0).
+- Confirmed correctness of R1 KPIs calculations (payouts, rake, rebuys).
+- Confirmed correctness of R2 completed tournaments podium, total collection, rake, and net pool.
+- Confirmed correctness of R3 chronological leaderboard rankings, columns (PJ, Victorias, Tendencia, Pts), and trend calculation.
+- Confirmed correctness of R4 responsive grids and text wrapping layout features.
 
 ## Artifact Index
-- C:\Users\Usuario\Documents\antigravity\Poker torneos adm\.agents\reviewer_1\BRIEFING.md - This briefing
-- C:\Users\Usuario\Documents\antigravity\Poker torneos adm\.agents\reviewer_1\progress.md - Progress heartbeat
-- C:\Users\Usuario\Documents\antigravity\Poker torneos adm\.agents\reviewer_1\handoff.md - Detailed review and handoff report
+- `.agents/reviewer_1/handoff.md` — Final review handoff report
+- `.agents/reviewer_1/progress.md` — Heartbeat and task progress
+
+## Review Checklist
+- **Items reviewed**: Dashboard.tsx, index.css, test suite files.
+- **Verdict**: APPROVE
+- **Unverified claims**: none
+
+## Attack Surface
+- **Hypotheses tested**: division-by-zero checks, null/undefined db values handling, massive numeric inputs, float rounding, layout responsiveness.
+- **Vulnerabilities found**: none (all calculations are fully guarded and robust).
+- **Untested angles**: none.
