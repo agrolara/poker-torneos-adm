@@ -939,14 +939,16 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     const rebuysCount = players.reduce((acc, p) => acc + p.rebuys_count, 0);
     const addOnsCount = players.filter(p => p.has_add_on).length;
 
+    const rakeTotal = buyInsCount * (tournament.rake_amount || 0);
+
     const prizePool = 
-      (buyInsCount * tournament.buy_in_amount) +
+      (buyInsCount * (tournament.buy_in_amount - (tournament.rake_amount || 0))) +
       (rebuysCount * tournament.rebuy_amount) +
       (addOnsCount * tournament.add_on_amount);
 
     const payouts = tournament.payout_structure.map(pct => Math.round((prizePool * pct) / 100));
 
-    return { prizePool, payouts, buyInsCount, rebuysCount, addOnsCount };
+    return { prizePool, payouts, buyInsCount, rebuysCount, addOnsCount, rakeTotal };
   };
 
   const calculateAverageStack = (activeCount: number) => {
@@ -1007,7 +1009,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   const nextLevel = getNextLevel();
   const activePlayers = players.filter(p => p.status === 'active');
   const activeTableNumbers = Array.from(new Set(activePlayers.filter(p => p.table_number !== null).map(p => p.table_number as number))).sort((a,b) => a-b);
-  const { prizePool, payouts } = calculateFinancials();
+  const { prizePool, payouts, rakeTotal } = calculateFinancials();
 
   const sortedWinners = [...players]
     .filter(p => p.elimination_position !== null)
@@ -1162,9 +1164,15 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
               <span style={styles.statVal}>${calculateAverageStack(activePlayers.length).toLocaleString()}</span>
             </div>
             <div style={styles.statRow}>
-              <span>Pozo de Premios:</span>
-              <span style={{ ...styles.statVal, color: 'var(--color-secondary)' }}>${prizePool.toLocaleString()}</span>
+              <span>Monto a Repartir:</span>
+              <span style={{ ...styles.statVal, color: 'var(--color-primary)' }}>${prizePool.toLocaleString()}</span>
             </div>
+            {tournament.rake_amount > 0 && (
+              <div style={styles.statRow}>
+                <span>Rake de Fecha:</span>
+                <span style={{ ...styles.statVal, color: 'var(--color-secondary)' }}>${rakeTotal.toLocaleString()}</span>
+              </div>
+            )}
             
             <div style={styles.payoutsList}>
               <h4 style={styles.payoutTitle}><Award size={14} /> Distribución de Premios</h4>

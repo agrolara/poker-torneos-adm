@@ -88,6 +88,7 @@ create table if not exists public.tournaments (
   rebuy_chips numeric default 0,
   add_on_amount numeric default 0,
   add_on_chips numeric default 0,
+  rake_amount numeric default 0,
   current_level_index integer default 0,
   seconds_remaining integer default 0,
   is_timer_running boolean default false,

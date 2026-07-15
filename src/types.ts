@@ -34,6 +34,7 @@ export interface Tournament {
   rebuy_chips: number;
   add_on_amount: number;
   add_on_chips: number;
+  rake_amount: number;
   current_level_index: number;
   seconds_remaining: number;
   is_timer_running: boolean;

@@ -71,11 +71,27 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
   const [levels, setLevels] = useState<Level[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // Default values to bundle in the structure levels jsonb column
+  const [defaultBuyInAmount, setDefaultBuyInAmount] = useState(10000);
+  const [defaultBuyInChips, setDefaultBuyInChips] = useState(10000);
+  const [defaultRebuyAmount, setDefaultRebuyAmount] = useState(10000);
+  const [defaultRebuyChips, setDefaultRebuyChips] = useState(10000);
+  const [defaultAddonAmount, setDefaultAddonAmount] = useState(10000);
+  const [defaultAddonChips, setDefaultAddonChips] = useState(15000);
+  const [defaultRakeAmount, setDefaultRakeAmount] = useState(3000);
+  const [defaultPayoutOption, setDefaultPayoutOption] = useState('1');
+
   // Helper inputs for adding a level
   const [sb, setSb] = useState(100);
   const [bb, setBb] = useState(200);
   const [ante, setAnte] = useState(0);
   const [duration, setDuration] = useState(15);
+
+  const getLevelsArray = (bsLevels: any): Level[] => {
+    if (!bsLevels) return [];
+    if (Array.isArray(bsLevels)) return bsLevels;
+    return bsLevels.levels || [];
+  };
 
   useEffect(() => {
     if (user) {
@@ -132,6 +148,20 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
       return;
     }
 
+    const levelsPayload = {
+      levels: levels,
+      defaults: {
+        buy_in_amount: Number(defaultBuyInAmount),
+        buy_in_chips: Number(defaultBuyInChips),
+        rebuy_amount: Number(defaultRebuyAmount),
+        rebuy_chips: Number(defaultRebuyChips),
+        add_on_amount: Number(defaultAddonAmount),
+        add_on_chips: Number(defaultAddonChips),
+        rake_amount: Number(defaultRakeAmount),
+        payout_option: defaultPayoutOption
+      }
+    };
+
     try {
       if (editingId) {
         // Edit structure
@@ -139,7 +169,7 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
           .from('blind_structures')
           .update({
             name: structureName,
-            levels: levels
+            levels: levelsPayload
           })
           .eq('id', editingId);
 
@@ -150,7 +180,7 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
           .from('blind_structures')
           .insert({
             name: structureName,
-            levels: levels,
+            levels: levelsPayload,
             organizer_id: user?.id
           });
 
@@ -263,6 +293,56 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
               </small>
             </div>
 
+            <div style={{ margin: '20px 0', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '16px' }}>
+              <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--color-primary)', marginBottom: '12px' }}>Valores por Defecto del Torneo</h4>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Buy-In ($ CLP)</label>
+                  <input type="number" className="form-input" value={defaultBuyInAmount} onChange={(e) => setDefaultBuyInAmount(Number(e.target.value))} style={{ padding: '6px 10px', fontSize: '0.85rem' }} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Rake ($ CLP)</label>
+                  <input type="number" className="form-input" value={defaultRakeAmount} onChange={(e) => setDefaultRakeAmount(Number(e.target.value))} style={{ padding: '6px 10px', fontSize: '0.85rem' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Recompra ($ CLP)</label>
+                  <input type="number" className="form-input" value={defaultRebuyAmount} onChange={(e) => setDefaultRebuyAmount(Number(e.target.value))} style={{ padding: '6px 10px', fontSize: '0.85rem' }} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Add-On ($ CLP)</label>
+                  <input type="number" className="form-input" value={defaultAddonAmount} onChange={(e) => setDefaultAddonAmount(Number(e.target.value))} style={{ padding: '6px 10px', fontSize: '0.85rem' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '4px' }}>Fichas Buy-In</label>
+                  <input type="number" className="form-input" value={defaultBuyInChips} onChange={(e) => setDefaultBuyInChips(Number(e.target.value))} style={{ padding: '4px 8px', fontSize: '0.8rem' }} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '4px' }}>Fichas Rebuy</label>
+                  <input type="number" className="form-input" value={defaultRebuyChips} onChange={(e) => setDefaultRebuyChips(Number(e.target.value))} style={{ padding: '4px 8px', fontSize: '0.8rem' }} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.7rem', marginBottom: '4px' }}>Fichas Add-On</label>
+                  <input type="number" className="form-input" value={defaultAddonChips} onChange={(e) => setDefaultAddonChips(Number(e.target.value))} style={{ padding: '4px 8px', fontSize: '0.8rem' }} />
+                </div>
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>Distribución de Premios</label>
+                <select className="form-input" value={defaultPayoutOption} onChange={(e) => setDefaultPayoutOption(e.target.value)} style={{ padding: '6px 10px', fontSize: '0.85rem' }}>
+                  <option value="1">Top 3 pagados (50% - 30% - 20%)</option>
+                  <option value="2">Top 2 pagados (70% - 30%)</option>
+                  <option value="3">Ganador toma todo (100%)</option>
+                </select>
+              </div>
+            </div>
+
             <div style={styles.addLevelBlock}>
               <h4 style={styles.levelBlockTitle}>Añadir Siguiente Nivel</h4>
               <div style={styles.addLevelGrid}>
@@ -347,30 +427,54 @@ export const Structures: React.FC<StructuresProps> = ({ onBack }) => {
               </div>
             ) : (
               <div style={styles.structuresList}>
-                {structures.map((s) => (
-                  <div key={s.id} style={styles.structureRow}>
-                    <div style={styles.structureInfo}>
-                      <span style={styles.structureName}>{s.name}</span>
-                      <span style={styles.structureSub}>{s.levels.length} Niveles de Ciegas</span>
+                {structures.map((s) => {
+                  const lvlArray = getLevelsArray(s.levels);
+                  const hasDefaults = !Array.isArray(s.levels) && (s.levels as any).defaults;
+                  return (
+                    <div key={s.id} style={styles.structureRow}>
+                      <div style={styles.structureInfo}>
+                        <span style={styles.structureName}>{s.name}</span>
+                        <span style={styles.structureSub}>{lvlArray.length} Niveles de Ciegas</span>
+                      </div>
+                      <div style={styles.actions}>
+                        <button style={styles.actionBtnEdit} onClick={() => {
+                          setEditingId(s.id);
+                          setStructureName(s.name);
+                          setLevels(lvlArray);
+                          if (lvlArray.length > 0) {
+                            setDuration(lvlArray[0].duration);
+                          }
+                          if (hasDefaults) {
+                            const defs = (s.levels as any).defaults;
+                            setDefaultBuyInAmount(defs.buy_in_amount || 0);
+                            setDefaultBuyInChips(defs.buy_in_chips || 0);
+                            setDefaultRebuyAmount(defs.rebuy_amount || 0);
+                            setDefaultRebuyChips(defs.rebuy_chips || 0);
+                            setDefaultAddonAmount(defs.add_on_amount || 0);
+                            setDefaultAddonChips(defs.add_on_chips || 0);
+                            setDefaultRakeAmount(defs.rake_amount || 0);
+                            setDefaultPayoutOption(defs.payout_option || '1');
+                          } else {
+                            setDefaultBuyInAmount(10000);
+                            setDefaultBuyInChips(10000);
+                            setDefaultRebuyAmount(10000);
+                            setDefaultRebuyChips(10000);
+                            setDefaultAddonAmount(10000);
+                            setDefaultAddonChips(15000);
+                            setDefaultRakeAmount(3000);
+                            setDefaultPayoutOption('1');
+                          }
+                          setIsEditing(true);
+                        }}>
+                          <Edit2 size={16} />
+                        </button>
+                        <button style={styles.actionBtnDelete} onClick={() => handleDelete(s.id)}>
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </div>
-                    <div style={styles.actions}>
-                      <button style={styles.actionBtnEdit} onClick={() => {
-                        setEditingId(s.id);
-                        setStructureName(s.name);
-                        setLevels(s.levels);
-                        if (s.levels && s.levels.length > 0) {
-                          setDuration(s.levels[0].duration);
-                        }
-                        setIsEditing(true);
-                      }}>
-                        <Edit2 size={16} />
-                      </button>
-                      <button style={styles.actionBtnDelete} onClick={() => handleDelete(s.id)}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

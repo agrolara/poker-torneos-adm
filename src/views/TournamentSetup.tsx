@@ -17,11 +17,12 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
   
   // Step 1: Config
   const [name, setName] = useState('Torneo de Fin de Semana');
-  const [buyInAmount, setBuyInAmount] = useState(10);
+  const [buyInAmount, setBuyInAmount] = useState(10000);
   const [buyInChips, setBuyInChips] = useState(10000);
-  const [rebuyAmount, setRebuyAmount] = useState(10);
+  const [rakeAmount, setRakeAmount] = useState(3000);
+  const [rebuyAmount, setRebuyAmount] = useState(10000);
   const [rebuyChips, setRebuyChips] = useState(10000);
-  const [addonAmount, setAddonAmount] = useState(10);
+  const [addonAmount, setAddonAmount] = useState(10000);
   const [addonChips, setAddonChips] = useState(15000);
   
   const [structures, setStructures] = useState<BlindStructure[]>([]);
@@ -44,6 +45,26 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
       fetchSetupData();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (selectedStructureId && structures.length > 0) {
+      const selectedStruct = structures.find(s => s.id === selectedStructureId);
+      if (selectedStruct) {
+        const hasDefaults = !Array.isArray(selectedStruct.levels) && (selectedStruct.levels as any).defaults;
+        if (hasDefaults) {
+          const defs = (selectedStruct.levels as any).defaults;
+          if (defs.buy_in_amount !== undefined) setBuyInAmount(defs.buy_in_amount);
+          if (defs.buy_in_chips !== undefined) setBuyInChips(defs.buy_in_chips);
+          if (defs.rebuy_amount !== undefined) setRebuyAmount(defs.rebuy_amount);
+          if (defs.rebuy_chips !== undefined) setRebuyChips(defs.rebuy_chips);
+          if (defs.add_on_amount !== undefined) setAddonAmount(defs.add_on_amount);
+          if (defs.add_on_chips !== undefined) setAddonChips(defs.add_on_chips);
+          if (defs.rake_amount !== undefined) setRakeAmount(defs.rake_amount);
+          if (defs.payout_option !== undefined) setPayoutOption(defs.payout_option);
+        }
+      }
+    }
+  }, [selectedStructureId, structures]);
 
   const fetchSetupData = async () => {
     try {
@@ -127,8 +148,11 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
       // Find structure levels to calculate initial time remaining
       let initialSeconds = 15 * 60; // fallback 15 mins
       const selectedStruct = structures.find(s => s.id === selectedStructureId);
-      if (selectedStruct && selectedStruct.levels.length > 0) {
-        initialSeconds = selectedStruct.levels[0].duration * 60;
+      if (selectedStruct) {
+        const lvlArray = Array.isArray(selectedStruct.levels) ? selectedStruct.levels : ((selectedStruct.levels as any).levels || []);
+        if (lvlArray.length > 0) {
+          initialSeconds = lvlArray[0].duration * 60;
+        }
       }
 
       // 1. Create Tournament row in Supabase
@@ -144,6 +168,7 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
           rebuy_chips: Number(rebuyChips),
           add_on_amount: Number(addonAmount),
           add_on_chips: Number(addonChips),
+          rake_amount: Number(rakeAmount),
           current_level_index: 0,
           seconds_remaining: initialSeconds,
           is_timer_running: false,
@@ -288,12 +313,16 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
 
             <div style={styles.cardSection}>
               <h4 style={styles.subHeading}>Entrada Inicial (Buy-In)</h4>
-              <div className="setup-form-grid" style={styles.formRow}>
-                <div className="form-group">
+              <div className="setup-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.2fr', gap: '10px' }}>
+                <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={styles.smallLabel}>Costo ($)</label>
                   <input type="number" className="form-input" value={buyInAmount} onChange={(e) => setBuyInAmount(Number(e.target.value))} />
                 </div>
-                <div className="form-group">
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={styles.smallLabel}>Rake ($)</label>
+                  <input type="number" className="form-input" value={rakeAmount} onChange={(e) => setRakeAmount(Number(e.target.value))} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={styles.smallLabel}>Fichas</label>
                   <input type="number" className="form-input" value={buyInChips} onChange={(e) => setBuyInChips(Number(e.target.value))} />
                 </div>

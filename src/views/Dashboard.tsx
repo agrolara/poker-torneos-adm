@@ -195,6 +195,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     }
   };
 
+  const calculateAccumulatedRake = () => {
+    if (!activeChampionship || champTournaments.length === 0) return 0;
+    let totalRake = 0;
+    champTournaments.forEach(t => {
+      const tPlayersCount = champPlayers.filter(cp => cp.tournament_id === t.id).length;
+      totalRake += tPlayersCount * Number(t.rake_amount || 0);
+    });
+    return totalRake;
+  };
+
   const calculateDashboardLeaderboard = () => {
     const standings: Record<string, {
       name: string;
@@ -403,10 +413,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         <div style={styles.sideColumn}>
           {/* Active Championship Leaderboard Widget */}
           <div className="glass-panel" style={{ ...styles.sideCard, marginBottom: '24px', borderColor: 'rgba(245, 158, 11, 0.15)' }}>
-            <h3 style={{ ...styles.sideCardTitle, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h3 style={{ ...styles.sideCardTitle, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: activeChampionship ? '4px' : '20px' }}>
               <Trophy size={18} color="var(--color-primary)" />
               {activeChampionship ? activeChampionship.name : 'Ranking de Liga'}
             </h3>
+
+            {activeChampionship && (
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.03) 100%)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                borderRadius: '8px',
+                padding: '10px 14px',
+                marginBottom: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.08)'
+              }}>
+                <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  💰 Rake de Liga:
+                </span>
+                <span style={{ fontSize: '1.05rem', color: '#10b981', fontWeight: 850 }}>
+                  ${calculateAccumulatedRake().toLocaleString()} CLP
+                </span>
+              </div>
+            )}
             
             {!activeChampionship ? (
               <div style={{ textAlign: 'center', padding: '16px 10px' }}>
