@@ -11,10 +11,13 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { user, profile } = useAuth();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [, setAllTournamentPlayers] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalTourneys: 0,
     totalPlayers: 0,
     totalPrizePool: 0,
+    totalRake: 0,
+    avgRebuys: '0.0'
   });
   const [loading, setLoading] = useState(true);
   const [dashboardTab, setDashboardTab] = useState<'championship' | 'standalone'>('championship');
@@ -126,18 +129,43 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
       if (playersError) throw playersError;
 
-      // Fetch financial stats (sum of payouts)
-      const { data: payoutData, error: payoutError } = await supabase
+      // Fetch all tournament players details
+      const { data: tpData, error: tpError } = await supabase
         .from('tournament_players')
-        .select('payout_amount');
+        .select(`
+          tournament_id,
+          player_id,
+          guest_name,
+          rebuys_count,
+          has_add_on,
+          elimination_position,
+          payout_amount,
+          player:player_id ( name )
+        `);
 
-      if (payoutError) throw payoutError;
-      const totalPaid = payoutData?.reduce((acc: number, p: any) => acc + Number(p.payout_amount || 0), 0) || 0;
+      if (tpError) throw tpError;
+      setAllTournamentPlayers(tpData || []);
+
+      const totalPaid = tpData?.reduce((acc: number, p: any) => acc + Number(p.payout_amount || 0), 0) || 0;
+
+      // Calculate total rake collected across completed tournaments
+      const completedTourneys = tourneysData?.filter((t: any) => t.status === 'completed') || [];
+      const totalRakePaid = completedTourneys.reduce((acc: number, t: any) => {
+        const tPlayersCount = (tpData || []).filter((cp: any) => cp.tournament_id === t.id).length;
+        return acc + tPlayersCount * Number(t.rake_amount || 0);
+      }, 0) || 0;
+
+      // Calculate average rebuys per player in completed tournaments
+      const completedPlayers = (tpData || []).filter((cp: any) => completedTourneys.some((t: any) => t.id === cp.tournament_id));
+      const totalRebuys = completedPlayers.reduce((acc: number, cp: any) => acc + (cp.rebuys_count || 0), 0);
+      const avgRebuysVal = completedPlayers.length > 0 ? (totalRebuys / completedPlayers.length).toFixed(1) : '0.0';
 
       setStats({
         totalTourneys: tourneysData?.length || 0,
         totalPlayers: playersCount || 0,
         totalPrizePool: totalPaid,
+        totalRake: totalRakePaid,
+        avgRebuys: avgRebuysVal
       });
 
       // Fetch active championship rankings

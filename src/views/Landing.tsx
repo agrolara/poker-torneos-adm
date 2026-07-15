@@ -24,6 +24,183 @@ export const Landing: React.FC = () => {
   const [adminLoading, setAdminLoading] = useState(false);
   const [showAdminPassword, setShowAdminPassword] = useState(false);
 
+  // Explorer States
+  const [showExplorerModal, setShowExplorerModal] = useState(false);
+  const [dbStructures, setDbStructures] = useState<any[]>([]);
+  const [dbLoading, setDbLoading] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
+  const [selectedStructure, setSelectedStructure] = useState<any | null>(null);
+  const [simPlayers, setSimPlayers] = useState<number | ''>(10);
+  const [simBuyIn, setSimBuyIn] = useState<number | ''>(10000);
+
+  const FALLBACK_DEFAULTS = {
+    buy_in: 10000,
+    rake: 3000,
+    payout_structure: [50, 30, 20]
+  };
+
+  const PRESETS = [
+    {
+      id: 'preset-turbo',
+      name: 'Turbo Preset',
+      levels: {
+        levels: [
+          { level: 1, small_blind: 100, big_blind: 200, ante: 0, duration: 10, is_break: false },
+          { level: 2, small_blind: 200, big_blind: 400, ante: 0, duration: 10, is_break: false },
+          { level: 3, small_blind: 300, big_blind: 600, ante: 50, duration: 10, is_break: false },
+          { level: 4, small_blind: 0, big_blind: 0, ante: 0, duration: 5, is_break: true },
+          { level: 5, small_blind: 400, big_blind: 800, ante: 100, duration: 10, is_break: false }
+        ],
+        defaults: { buy_in: 10000, rake: 1000, payout_structure: [50, 30, 20] }
+      }
+    },
+    {
+      id: 'preset-estandar',
+      name: 'Estándar Preset',
+      levels: {
+        levels: [
+          { level: 1, small_blind: 100, big_blind: 200, ante: 0, duration: 15, is_break: false },
+          { level: 2, small_blind: 200, big_blind: 400, ante: 0, duration: 15, is_break: false },
+          { level: 3, small_blind: 300, big_blind: 600, ante: 50, duration: 15, is_break: false },
+          { level: 4, small_blind: 0, big_blind: 0, ante: 0, duration: 10, is_break: true },
+          { level: 5, small_blind: 400, big_blind: 800, ante: 100, duration: 15, is_break: false }
+        ],
+        defaults: { buy_in: 15000, rake: 1500, payout_structure: [50, 30, 20] }
+      }
+    },
+    {
+      id: 'preset-deepstack',
+      name: 'Deepstack Preset',
+      levels: {
+        levels: [
+          { level: 1, small_blind: 100, big_blind: 200, ante: 0, duration: 20, is_break: false },
+          { level: 2, small_blind: 150, big_blind: 300, ante: 0, duration: 20, is_break: false },
+          { level: 3, small_blind: 200, big_blind: 400, ante: 0, duration: 20, is_break: false },
+          { level: 4, small_blind: 250, big_blind: 500, ante: 50, duration: 20, is_break: false },
+          { level: 5, small_blind: 0, big_blind: 0, ante: 0, duration: 10, is_break: true },
+          { level: 6, small_blind: 300, big_blind: 600, ante: 50, duration: 20, is_break: false }
+        ],
+        defaults: { buy_in: 20000, rake: 2000, payout_structure: [40, 30, 20, 10] }
+      }
+    }
+  ];
+
+  const fetchStructures = async () => {
+    setDbLoading(true);
+    setDbError(null);
+    try {
+      const { data, error } = await supabase
+        .from('blind_structures')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) {
+        setDbError(error.message);
+      } else {
+        setDbStructures(data || []);
+      }
+    } catch (err: any) {
+      setDbError(err.message || 'Error al conectar con la base de datos');
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  const handleSelectStructure = (struct: any) => {
+    setSelectedStructure(struct);
+    let defaults = FALLBACK_DEFAULTS;
+    if (struct.levels && !Array.isArray(struct.levels) && typeof struct.levels === 'object') {
+      defaults = {
+        buy_in: struct.levels.defaults?.buy_in ?? FALLBACK_DEFAULTS.buy_in,
+        rake: struct.levels.defaults?.rake ?? FALLBACK_DEFAULTS.rake,
+        payout_structure: struct.levels.defaults?.payout_structure ?? FALLBACK_DEFAULTS.payout_structure
+      };
+    }
+    setSimPlayers(10);
+    setSimBuyIn(defaults.buy_in);
+  };
+
+  const handlePlayersChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (val === '') {
+      setSimPlayers('');
+      return;
+    }
+    let parsed = parseFloat(val);
+    if (isNaN(parsed)) {
+      setSimPlayers(0);
+    } else {
+      parsed = Math.round(parsed);
+      if (parsed < 0) parsed = 0;
+      setSimPlayers(parsed);
+    }
+  };
+
+  const handleBuyInChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (val === '') {
+      setSimBuyIn('');
+      return;
+    }
+    let parsed = parseFloat(val);
+    if (isNaN(parsed)) {
+      setSimBuyIn(0);
+    } else {
+      if (parsed < 0) parsed = 0;
+      setSimBuyIn(parsed);
+    }
+  };
+
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      setShowExplorerModal(false);
+      setSelectedStructure(null);
+    }
+  };
+
+  const getSelectedStructureDetails = () => {
+    if (!selectedStructure) return { levels: [], defaults: FALLBACK_DEFAULTS };
+    let levels: any[] = [];
+    let defaults = FALLBACK_DEFAULTS;
+    if (Array.isArray(selectedStructure.levels)) {
+      levels = selectedStructure.levels;
+    } else if (selectedStructure.levels && typeof selectedStructure.levels === 'object') {
+      levels = selectedStructure.levels.levels || [];
+      defaults = {
+        buy_in: selectedStructure.levels.defaults?.buy_in ?? FALLBACK_DEFAULTS.buy_in,
+        rake: selectedStructure.levels.defaults?.rake ?? FALLBACK_DEFAULTS.rake,
+        payout_structure: selectedStructure.levels.defaults?.payout_structure ?? FALLBACK_DEFAULTS.payout_structure
+      };
+    }
+    return { levels, defaults };
+  };
+
+  const { levels: currentLevels, defaults: currentDefaults } = getSelectedStructureDetails();
+
+  const numPlayers = simPlayers === '' ? 0 : simPlayers;
+  const numBuyIn = simBuyIn === '' ? 0 : simBuyIn;
+  const rakePerPlayer = Math.min(numBuyIn, currentDefaults.rake ?? 0);
+
+  const grossPool = numPlayers * numBuyIn;
+  const rakeDeduction = numPlayers * rakePerPlayer;
+  const netPool = Math.max(0, grossPool - rakeDeduction);
+
+  const payoutStructure = currentDefaults.payout_structure || [100];
+
+  const prizeRows = payoutStructure.map((percentage, index) => {
+    const position = index + 1;
+    const prizeAmount = Math.round((netPool * percentage) / 100);
+    return {
+      position,
+      percentage,
+      amount: prizeAmount
+    };
+  });
+
+  const formatAmount = (num: number) => {
+    if (num === 0) return '0';
+    return Math.round(num).toLocaleString('es-CL');
+  };
+
   // Super Admin Login handler
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,6 +325,19 @@ export const Landing: React.FC = () => {
             <Key size={15} style={{ marginRight: '6px' }} />
             Acceso a tu liga
           </button>
+
+          <button
+            className="btn btn-outline"
+            style={styles.explorarBtn}
+            data-testid="btn-explorar-estructuras"
+            onClick={() => {
+              setShowExplorerModal(true);
+              fetchStructures();
+            }}
+          >
+            <Zap size={15} style={{ marginRight: '6px', color: '#10b981' }} />
+            Explorar Estructuras
+          </button>
           
           <a 
             href="https://wa.me/56993005959" 
@@ -176,7 +366,7 @@ export const Landing: React.FC = () => {
           </h1>
           
           <p style={styles.subtitle}>
-            Administra partidas de una o múltiples mesas de forma profesional. Sorteo de asientos, balanceo automático, reloj de ciegas dinámico y proyección completa para TV con voz inteligente.
+            Administra partidas de una o múltiples mesas de forma profesional. Sorteo de asientos, balanceo automático, reloj de blinds dinámico y proyección completa para TV con voz inteligente.
           </p>
 
           {/* Optimized Interface Mockup (Video) */}
@@ -216,7 +406,7 @@ export const Landing: React.FC = () => {
                   <Tv size={20} color="var(--color-primary)" />
                 </div>
                 <div>
-                  <h4 style={styles.featureTitle}>Reloj de Ciegas en TV</h4>
+                  <h4 style={styles.featureTitle}>Reloj de Blinds en TV</h4>
                   <p style={styles.featureDesc}>Pantalla completa optimizada para pantallas con avisos de voz configurables.</p>
                 </div>
               </div>
@@ -389,6 +579,239 @@ export const Landing: React.FC = () => {
                 {adminLoading ? 'Ingresando...' : 'Ingresar como Administrador'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Explorar Estructuras Modal */}
+      {showExplorerModal && (
+        <div 
+          style={styles.modalExplorerOverlay} 
+          data-testid="modal-explorar-estructuras"
+          onClick={handleOverlayClick}
+        >
+          <div className="glass-panel" style={styles.modalExplorerContent}>
+            {/* Modal Title / Header */}
+            <div style={styles.modalExplorerHeader}>
+              <h3 data-testid="modal-title" style={styles.modalTitle}>
+                {selectedStructure 
+                  ? `Estructura: ${selectedStructure.name}` 
+                  : 'Explorar Estructuras de Blinds'}
+              </h3>
+              <button
+                type="button"
+                data-testid="modal-close-btn"
+                onClick={() => {
+                  setShowExplorerModal(false);
+                  setSelectedStructure(null);
+                }}
+                style={styles.modalCloseX}
+              >
+                &times;
+              </button>
+            </div>
+
+            {selectedStructure ? (
+              /* DETAIL VIEW */
+              <div style={styles.detailContainer}>
+                {/* Back button */}
+                <button
+                  type="button"
+                  data-testid="detail-back-btn"
+                  onClick={() => setSelectedStructure(null)}
+                  style={styles.backBtn}
+                >
+                  &larr; Volver a la lista
+                </button>
+
+                <div style={styles.detailGrid}>
+                  {/* Left column: Level list */}
+                  <div style={styles.levelsCol}>
+                    <h4 style={styles.sectionTitle}>Blinds y Descansos</h4>
+                    <div 
+                      data-testid="levels-container" 
+                      className="levels-container scroll"
+                      style={styles.levelsContainer}
+                    >
+                      <table style={styles.levelsTable}>
+                        <thead>
+                          <tr>
+                            <th style={styles.th}>Lvl</th>
+                            <th style={styles.th}>Ciegas</th>
+                            <th style={styles.th}>Ante</th>
+                            <th style={styles.th}>Duración</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {currentLevels.map((lvl, index) => {
+                            if (lvl.is_break) {
+                              return (
+                                <tr 
+                                  key={index} 
+                                  data-testid={`break-row-${index + 1}`}
+                                  className="break-row green"
+                                  style={styles.breakRow}
+                                >
+                                  <td colSpan={4} style={styles.breakCell}>
+                                    Descanso: {lvl.duration} min
+                                  </td>
+                                </tr>
+                              );
+                            } else {
+                              return (
+                                <tr 
+                                  key={index} 
+                                  data-testid={`level-row-${lvl.level}`}
+                                  style={styles.levelRow}
+                                >
+                                  <td style={styles.td}>{lvl.level}</td>
+                                  <td style={styles.td}>
+                                    {formatAmount(lvl.small_blind)} / {formatAmount(lvl.big_blind)}
+                                  </td>
+                                  <td style={styles.td}>{formatAmount(lvl.ante)}</td>
+                                  <td style={styles.td}>{lvl.duration} min</td>
+                                </tr>
+                              );
+                            }
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Right column: Payout Simulator */}
+                  <div style={styles.simCol}>
+                    <h4 style={styles.sectionTitle}>Simulador de Premios</h4>
+                    
+                    <div style={styles.simInputsRow}>
+                      <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.85rem' }}>Jugadores</label>
+                        <input
+                          type="number"
+                          data-testid="sim-players-input"
+                          className="form-input"
+                          style={styles.simInput}
+                          value={simPlayers}
+                          onChange={handlePlayersChange}
+                        />
+                      </div>
+                      <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.85rem' }}>Buy-in (CLP)</label>
+                        <input
+                          type="number"
+                          data-testid="sim-buyin-input"
+                          className="form-input"
+                          style={styles.simInput}
+                          value={simBuyIn}
+                          onChange={handleBuyInChange}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={styles.simResults}>
+                      <div style={styles.resultItem}>
+                        <span>Bolsa Bruta:</span>
+                        <strong data-testid="sim-gross-pool">{formatAmount(grossPool)}</strong>
+                      </div>
+                      <div style={styles.resultItem}>
+                        <span>Descuento Rake:</span>
+                        <strong data-testid="sim-rake-deduction">{formatAmount(rakeDeduction)}</strong>
+                      </div>
+                      <div style={styles.resultItem} className="net-pool-row">
+                        <span>Bolsa Neta:</span>
+                        <strong data-testid="sim-net-pool" style={{ color: '#10b981' }}>{formatAmount(netPool)}</strong>
+                      </div>
+                    </div>
+
+                    <h5 style={styles.subsectionTitle}>Distribución de Premios</h5>
+                    <div style={styles.payoutList}>
+                      {prizeRows.map((prize) => (
+                        <div 
+                          key={prize.position} 
+                          data-testid={`prize-row-${prize.position}`}
+                          style={styles.prizeRow}
+                        >
+                          <span style={styles.prizePosition}>#{prize.position} Lugar</span>
+                          <span style={styles.prizePercent}>{prize.percentage}%</span>
+                          <span style={styles.prizeVal}>{formatAmount(prize.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* LIST VIEW */
+              <div style={styles.listContainer}>
+                {/* System Presets */}
+                <div style={styles.presetSection}>
+                  <h4 style={styles.sectionTitle}>Estructuras Predeterminadas</h4>
+                  <div style={styles.structureGrid}>
+                    {PRESETS.map((struct) => (
+                      <div
+                        key={struct.id}
+                        data-testid={`structure-item-${struct.id}`}
+                        onClick={() => handleSelectStructure(struct)}
+                        className="glass-panel glass-panel-hover"
+                        style={styles.structureCard}
+                      >
+                        <div style={styles.structureCardHeader}>
+                          <h5 style={styles.structureName}>{struct.name}</h5>
+                          <span style={styles.structureTag}>Preset</span>
+                        </div>
+                        <p style={styles.structureMeta}>
+                          {Array.isArray(struct.levels) 
+                            ? struct.levels.length 
+                            : (struct.levels.levels?.length || 0)} niveles/descansos
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Database Public Structures */}
+                <div style={styles.dbSection}>
+                  <h4 style={styles.sectionTitle}>Estructuras de la Comunidad</h4>
+                  {dbLoading ? (
+                    <div data-testid="loading-skeleton" style={styles.loadingSkeleton}>
+                      Cargando estructuras de la comunidad...
+                    </div>
+                  ) : dbError ? (
+                    <div style={styles.errorAlert}>
+                      Error al cargar estructuras: {dbError}
+                    </div>
+                  ) : dbStructures.length === 0 ? (
+                    <div style={styles.emptyState}>
+                      No se encontraron estructuras publicadas.
+                    </div>
+                  ) : (
+                    <div style={styles.structureGrid}>
+                      {dbStructures.map((struct) => (
+                        <div
+                          key={struct.id}
+                          data-testid={`structure-item-${struct.id}`}
+                          onClick={() => handleSelectStructure(struct)}
+                          className="glass-panel glass-panel-hover"
+                          style={styles.structureCard}
+                        >
+                          <div style={styles.structureCardHeader}>
+                            <h5 style={styles.structureName}>{struct.name}</h5>
+                            <span style={{ ...styles.structureTag, backgroundColor: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' }}>
+                              Pública
+                            </span>
+                          </div>
+                          <p style={styles.structureMeta}>
+                            {Array.isArray(struct.levels) 
+                              ? struct.levels.length 
+                              : (struct.levels.levels?.length || 0)} niveles/descansos
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -778,5 +1201,263 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#c5a880',
     fontWeight: 700,
     textShadow: '0 0 8px rgba(197, 168, 128, 0.3)',
+  },
+  explorarBtn: {
+    padding: '8px 16px',
+    fontSize: '0.85rem',
+    fontWeight: 700,
+    borderRadius: '8px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    background: 'rgba(16, 185, 129, 0.02)',
+  },
+  modalExplorerOverlay: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backdropFilter: 'blur(12px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+    padding: '20px',
+  },
+  modalExplorerContent: {
+    maxWidth: '900px',
+    width: '100%',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    border: '1px solid rgba(197, 168, 128, 0.2)',
+    background: '#0a0f1d',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '24px',
+    position: 'relative',
+    padding: '30px',
+    borderRadius: '16px',
+    boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.5)',
+  },
+  modalExplorerHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+    paddingBottom: '12px',
+  },
+  listContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '24px',
+  },
+  presetSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  dbSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  sectionTitle: {
+    fontSize: '1.2rem',
+    fontWeight: 700,
+    color: '#ffffff',
+    margin: 0,
+  },
+  subsectionTitle: {
+    fontSize: '1rem',
+    fontWeight: 700,
+    color: '#ffffff',
+    margin: '16px 0 8px 0',
+  },
+  structureGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+    gap: '16px',
+  },
+  structureCard: {
+    padding: '16px',
+    cursor: 'pointer',
+    background: 'rgba(15, 23, 42, 0.3)',
+    border: '1px solid rgba(255, 255, 255, 0.05)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  structureCardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  structureName: {
+    fontSize: '1rem',
+    fontWeight: 700,
+    color: '#ffffff',
+    margin: 0,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    maxWidth: '160px',
+  },
+  structureTag: {
+    fontSize: '0.7rem',
+    fontWeight: 700,
+    padding: '2px 8px',
+    borderRadius: '100px',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    color: '#10b981',
+  },
+  structureMeta: {
+    fontSize: '0.8rem',
+    color: 'var(--color-text-secondary)',
+    margin: 0,
+  },
+  loadingSkeleton: {
+    padding: '20px',
+    textAlign: 'center',
+    color: 'var(--color-text-secondary)',
+  },
+  emptyState: {
+    padding: '20px',
+    textAlign: 'center',
+    color: 'var(--color-text-secondary)',
+    border: '1px dashed rgba(255, 255, 255, 0.1)',
+    borderRadius: '8px',
+  },
+  detailContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  backBtn: {
+    alignSelf: 'flex-start',
+    background: 'none',
+    border: 'none',
+    color: '#10b981',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+    fontWeight: 600,
+    padding: 0,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  detailGrid: {
+    display: 'flex',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: '24px',
+  },
+  levelsCol: {
+    flex: '1 1 350px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  levelsContainer: {
+    maxHeight: '400px',
+    overflowY: 'auto',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: '8px',
+    background: 'rgba(15, 23, 42, 0.2)',
+  },
+  levelsTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '0.9rem',
+  },
+  th: {
+    position: 'sticky',
+    top: 0,
+    background: '#0a0f1d',
+    padding: '10px 12px',
+    textAlign: 'left',
+    color: 'var(--color-text-secondary)',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+    fontWeight: 600,
+  },
+  td: {
+    padding: '10px 12px',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+  },
+  levelRow: {
+    transition: 'background 0.2s',
+  },
+  breakRow: {
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+  },
+  breakCell: {
+    padding: '10px 12px',
+    color: '#10b981',
+    fontWeight: 700,
+    textAlign: 'center',
+    borderBottom: '1px solid rgba(16, 185, 129, 0.15)',
+  },
+  simCol: {
+    flex: '1 1 350px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+    background: 'rgba(15, 23, 42, 0.25)',
+    border: '1px solid rgba(255, 255, 255, 0.05)',
+    borderRadius: '8px',
+    padding: '16px',
+  },
+  simInputsRow: {
+    display: 'flex',
+    gap: '16px',
+  },
+  simInput: {
+    width: '100%',
+    padding: '10px',
+    background: 'rgba(15, 23, 42, 0.5)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '6px',
+    color: '#ffffff',
+  },
+  simResults: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    background: 'rgba(15, 23, 42, 0.4)',
+    padding: '12px',
+    borderRadius: '6px',
+    border: '1px solid rgba(255, 255, 255, 0.04)',
+  },
+  resultItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    fontSize: '0.9rem',
+    color: 'var(--color-text-secondary)',
+  },
+  payoutList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  prizeRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '8px 12px',
+    background: 'rgba(255, 255, 255, 0.02)',
+    border: '1px solid rgba(255, 255, 255, 0.04)',
+    borderRadius: '6px',
+    fontSize: '0.9rem',
+  },
+  prizePosition: {
+    fontWeight: 600,
+    color: '#ffffff',
+  },
+  prizePercent: {
+    color: 'var(--color-text-secondary)',
+  },
+  prizeVal: {
+    fontWeight: 700,
+    color: '#f59e0b',
   },
 };

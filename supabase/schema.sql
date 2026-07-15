@@ -72,9 +72,13 @@ create table if not exists public.blind_structures (
 alter table public.blind_structures enable row level security;
 
 drop policy if exists "Organizers can manage their blind structures" on public.blind_structures;
+drop policy if exists "Anyone can view blind structures" on public.blind_structures;
 
 create policy "Organizers can manage their blind structures" on public.blind_structures
   for all using (auth.uid() = organizer_id);
+
+create policy "Anyone can view blind structures" on public.blind_structures
+  for select using (true);
 
 -- Create Tournaments Table if not exists
 create table if not exists public.tournaments (
