@@ -56,6 +56,23 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   const lastWarnedMinuteLevelRef = useRef<number>(-1);
   const isFirstLoadRef = useRef(true);
 
+  // Refs for tracking timer states to avoid stale closures in callbacks
+  const secondsRemainingRef = useRef(secondsRemaining);
+  const isRunningRef = useRef(isRunning);
+  const currentLevelIdxRef = useRef(currentLevelIdx);
+
+  useEffect(() => {
+    secondsRemainingRef.current = secondsRemaining;
+  }, [secondsRemaining]);
+
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+
+  useEffect(() => {
+    currentLevelIdxRef.current = currentLevelIdx;
+  }, [currentLevelIdx]);
+
   // Helper: derive accurate seconds from a DB snapshot with timer_reference_at and client offset
   const deriveSecondsFromSnapshot = (dbSeconds: number, referenceAt: string | null | undefined, isRunning: boolean): number => {
     if (!isRunning || !referenceAt) return dbSeconds;
@@ -158,7 +175,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     };
   }, []);
 
-  // Sync Timer with local state changes
+  // Sync Timer with local state changes and save to database every second
   useEffect(() => {
     if (isRunning) {
       timerRef.current = setInterval(() => {
@@ -167,6 +184,14 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
             return 0;
           }
           const nextSec = prev - 1;
+          
+          // Save to database every single second to maintain second-to-second persistency
+          saveTimerStateToDb({
+            seconds_remaining: nextSec,
+            is_timer_running: true,
+            current_level_index: currentLevelIdxRef.current
+          });
+
           // Send simple tick sync locally
           broadcastChannelRef.current?.postMessage({
             type: 'TICK',
@@ -202,18 +227,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     }
   }, [secondsRemaining, isRunning, currentLevelIdx]);
 
-  // Periodic database save (every 5 seconds for tighter cross-device sync)
-  useEffect(() => {
-    let saveInterval: any;
-    if (isRunning) {
-      saveInterval = setInterval(() => {
-        saveTimerStateToDb();
-      }, 5000);
-    }
-    return () => {
-      if (saveInterval) clearInterval(saveInterval);
-    };
-  }, [isRunning, secondsRemaining, currentLevelIdx]);
+  // Removed periodic 5-second database save hook in favor of second-to-second saves
 
   const fetchTournamentData = async () => {
     try {
@@ -346,9 +360,9 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       await supabase
         .from('tournaments')
         .update({
-          seconds_remaining: overrides.seconds_remaining ?? secondsRemaining,
-          is_timer_running: overrides.is_timer_running ?? isRunning,
-          current_level_index: overrides.current_level_index ?? currentLevelIdx,
+          seconds_remaining: overrides.seconds_remaining ?? secondsRemainingRef.current,
+          is_timer_running: overrides.is_timer_running ?? isRunningRef.current,
+          current_level_index: overrides.current_level_index ?? currentLevelIdxRef.current,
           timer_reference_at: new Date().toISOString(),
           ...overrides
         })
