@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Trophy, Users, Landmark, Clock, Volume2, VolumeX } from 'lucide-react';
+import { supabase } from '../supabaseClient';
 
 interface TVState {
   tournament_name: string;
@@ -103,39 +104,190 @@ export const TVDisplay: React.FC = () => {
     }
   };
 
+  // Helper: derive accurate seconds from a DB snapshot with timer_reference_at
+  const deriveSecondsFromSnapshot = (dbSeconds: number, referenceAt: string | null | undefined, isRunning: boolean): number => {
+    if (!isRunning || !referenceAt) return dbSeconds;
+    const refTime = new Date(referenceAt).getTime();
+    const now = Date.now();
+    const elapsed = Math.floor((now - refTime) / 1000);
+    return Math.max(0, dbSeconds - elapsed);
+  };
+
+  const updateTVStateAndAnnounce = (newState: TVState) => {
+    setState(newState);
+    setLocalSeconds(newState.seconds_remaining);
+    
+    // Voice announcement if level changed
+    if (newState.current_level_index !== lastAnnouncedLevelRef.current) {
+      if (lastAnnouncedLevelRef.current !== -1) {
+        if (voiceEnabledRef.current) {
+          if (newState.is_break) {
+            speakAnnounce(`¡Tiempo de descanso! Iniciamos un descanso de ${newState.duration_minutes || 15} minutos.`);
+          } else {
+            speakAnnounce(`¡Atención! Ciegas suben. Nivel nuevo. Ciegas: ${newState.small_blind} y ${newState.big_blind}. Ante de ${newState.ante || 0}`);
+          }
+        } else {
+          playAlarmSound();
+        }
+      }
+      lastAnnouncedLevelRef.current = newState.current_level_index;
+    }
+  };
+
+  const fetchStateFromDb = async (tournamentId: string) => {
+    try {
+      // 1. Fetch tournament
+      const { data: tData } = await supabase
+        .from('tournaments')
+        .select('*')
+        .eq('id', tournamentId)
+        .single();
+      if (!tData) return;
+
+      // 2. Fetch players
+      const { data: pData } = await supabase
+        .from('tournament_players')
+        .select('*, player:players(name)')
+        .eq('tournament_id', tournamentId);
+      const players = pData || [];
+
+      // 3. Fetch structure
+      let structure = null;
+      if (tData.structure_id) {
+        const { data: sData } = await supabase
+          .from('blind_structures')
+          .select('*')
+          .eq('id', tData.structure_id)
+          .single();
+        structure = sData;
+      }
+
+      // Helper to get levels
+      const getLevelsArray = (structure: any) => {
+        if (!structure) return [];
+        if (Array.isArray(structure.levels)) return structure.levels;
+        return structure.levels.levels || [];
+      };
+
+      const levels = getLevelsArray(structure);
+      const activeIdx = tData.current_level_index;
+      const activeLevel = levels[activeIdx] || null;
+      const nextLevel = levels[activeIdx + 1] || null;
+
+      const activeCount = players.filter((p: any) => p.status === 'active').length;
+      
+      // Calculate financials
+      const totalBuyIns = players.length * (tData.buy_in_amount || 0);
+      const totalRebuys = players.reduce((sum: number, tp: any) => sum + (tp.rebuys_count || 0) * (tData.rebuy_amount || 0), 0);
+      const totalAddOns = players.reduce((sum: number, tp: any) => sum + (tp.has_add_on ? (tData.add_on_amount || 0) : 0), 0);
+      const totalPrizePool = totalBuyIns + totalRebuys + totalAddOns;
+      const totalRake = players.length * (tData.rake_amount || 0);
+      const prizePool = Math.max(0, totalPrizePool - totalRake);
+
+      // Payouts calculation
+      const payoutPct = tData.payout_structure || [50, 30, 20];
+      const payouts = payoutPct.map((pct: number) => Math.round((prizePool * pct) / 100));
+
+      // Average stack calculation
+      const chipsBuyIn = tData.buy_in_chips || 0;
+      const chipsRebuy = tData.rebuy_chips || 0;
+      const chipsAddOn = tData.add_on_chips || 0;
+      const totalChips = players.length * chipsBuyIn +
+        players.reduce((sum: number, tp: any) => sum + (tp.rebuys_count || 0) * chipsRebuy, 0) +
+        players.reduce((sum: number, tp: any) => sum + (tp.has_add_on ? chipsAddOn : 0), 0);
+      const averageStack = activeCount > 0 ? Math.round(totalChips / activeCount) : 0;
+
+      // Compensate timer using the helper (deriveSecondsFromSnapshot)
+      const derivedSec = deriveSecondsFromSnapshot(
+        tData.seconds_remaining,
+        tData.timer_reference_at,
+        tData.is_timer_running
+      );
+
+      const tvState: TVState = {
+        tournament_name: tData.name,
+        status: tData.status,
+        seconds_remaining: derivedSec,
+        is_timer_running: tData.is_timer_running,
+        current_level_index: activeIdx,
+        small_blind: activeLevel?.small_blind || 0,
+        big_blind: activeLevel?.big_blind || 0,
+        ante: activeLevel?.ante || 0,
+        next_small_blind: nextLevel?.small_blind || 0,
+        next_big_blind: nextLevel?.big_blind || 0,
+        next_ante: nextLevel?.ante || 0,
+        active_players: activeCount,
+        total_players: players.length,
+        average_stack: averageStack,
+        prize_pool: prizePool,
+        payouts: payouts,
+        is_break: activeLevel?.is_break || false,
+        duration_minutes: activeLevel?.duration || 0,
+        level_label: activeLevel?.is_break ? 'DESCANSO' : `NIVEL ${activeLevel?.level || 1}`
+      };
+
+      updateTVStateAndAnnounce(tvState);
+    } catch (err) {
+      console.error('Error fetching TV state from Supabase:', err);
+    }
+  };
+
   useEffect(() => {
-    // Connect to BroadcastChannel
+    // Get tournament ID from URL query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const tournamentId = urlParams.get('id');
+
+    // Connect to BroadcastChannel (local sync)
     const channel = new BroadcastChannel('poker_tournament_sync');
     broadcastChannelRef.current = channel;
 
     channel.onmessage = (event) => {
       const { type, payload } = event.data;
       if (type === 'STATE_UPDATE') {
-        setState(payload);
-        setLocalSeconds(payload.seconds_remaining);
-        
-        // Voice announcement if level changed
-        if (payload.current_level_index !== lastAnnouncedLevelRef.current) {
-          if (lastAnnouncedLevelRef.current !== -1) {
-            if (voiceEnabledRef.current) {
-              if (payload.is_break) {
-                speakAnnounce(`¡Tiempo de descanso! Iniciamos un descanso de ${payload.duration_minutes || 15} minutos.`);
-              } else {
-                speakAnnounce(`¡Atención! Ciegas suben. Nivel nuevo. Ciegas: ${payload.small_blind} y ${payload.big_blind}. Ante de ${payload.ante || 0}`);
-              }
-            } else {
-              playAlarmSound();
-            }
-          }
-          lastAnnouncedLevelRef.current = payload.current_level_index;
-        }
+        updateTVStateAndAnnounce(payload);
       } else if (type === 'TICK') {
         setLocalSeconds(payload.seconds_remaining);
       }
     };
 
-    // Request state from organizer window upon opening
+    // Request state from local organizer window upon opening
     channel.postMessage({ type: 'REQUEST_STATE' });
+
+    let realtimeChannel: any = null;
+
+    if (tournamentId) {
+      // 1. Initial database fetch
+      fetchStateFromDb(tournamentId);
+
+      // 2. Subscribe to realtime updates on tournaments and tournament_players
+      realtimeChannel = supabase
+        .channel(`tv-sync-${tournamentId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tournaments',
+            filter: `id=eq.${tournamentId}`
+          },
+          () => {
+            fetchStateFromDb(tournamentId);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tournament_players',
+            filter: `tournament_id=eq.${tournamentId}`
+          },
+          () => {
+            fetchStateFromDb(tournamentId);
+          }
+        )
+        .subscribe();
+    }
 
     // Local tick interpolation for smooth clock transitions
     const interval = setInterval(() => {
@@ -153,6 +305,9 @@ export const TVDisplay: React.FC = () => {
     return () => {
       clearInterval(interval);
       channel.close();
+      if (realtimeChannel) {
+        supabase.removeChannel(realtimeChannel);
+      }
     };
   }, []);
 

@@ -96,10 +96,14 @@ create table if not exists public.tournaments (
   current_level_index integer default 0,
   seconds_remaining integer default 0,
   is_timer_running boolean default false,
+  timer_reference_at timestamp with time zone default timezone('utc'::text, now()),
   max_players_per_table integer default 10,
   payout_structure jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
+
+-- Enable realtime for cross-device sync
+alter publication supabase_realtime add table public.tournaments;
 
 alter table public.tournaments enable row level security;
 

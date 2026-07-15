@@ -39,6 +39,7 @@ export interface Tournament {
   current_level_index: number;
   seconds_remaining: number;
   is_timer_running: boolean;
+  timer_reference_at?: string;
   max_players_per_table: number;
   payout_structure: number[]; // e.g. [50, 30, 20]
   structure_id?: string;

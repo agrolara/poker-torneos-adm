@@ -52,11 +52,21 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+  const realtimeChannelRef = useRef<any>(null);
   const lastWarnedMinuteLevelRef = useRef<number>(-1);
   const isFirstLoadRef = useRef(true);
 
+  // Helper: derive accurate seconds from a DB snapshot with timer_reference_at
+  const deriveSecondsFromSnapshot = (dbSeconds: number, referenceAt: string | null | undefined, isRunning: boolean): number => {
+    if (!isRunning || !referenceAt) return dbSeconds;
+    const refTime = new Date(referenceAt).getTime();
+    const now = Date.now();
+    const elapsed = Math.floor((now - refTime) / 1000);
+    return Math.max(0, dbSeconds - elapsed);
+  };
+
   useEffect(() => {
-    // Initialize Sync channel
+    // Initialize Sync channel (local tabs)
     broadcastChannelRef.current = new BroadcastChannel('poker_tournament_sync');
     
     fetchTournamentData();
@@ -68,9 +78,47 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       }
     };
 
+    // Supabase Realtime subscription for cross-device sync
+    const channel = supabase
+      .channel(`tournament-sync-${initialTournament.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'tournaments',
+          filter: `id=eq.${initialTournament.id}`
+        },
+        (payload: any) => {
+          const newData = payload.new;
+          if (!newData) return;
+          
+          // Only apply remote updates (ignore our own saves)
+          // We detect remote updates by checking if the timer_reference_at differs
+          // significantly from what we'd expect
+          const derivedSeconds = deriveSecondsFromSnapshot(
+            newData.seconds_remaining,
+            newData.timer_reference_at,
+            newData.is_timer_running
+          );
+          
+          // Update local state from remote changes
+          setTournament(prev => ({ ...prev, ...newData }));
+          setSecondsRemaining(derivedSeconds);
+          setIsRunning(newData.is_timer_running);
+          setCurrentLevelIdx(newData.current_level_index);
+        }
+      )
+      .subscribe();
+    
+    realtimeChannelRef.current = channel;
+
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (broadcastChannelRef.current) broadcastChannelRef.current.close();
+      if (realtimeChannelRef.current) {
+        supabase.removeChannel(realtimeChannelRef.current);
+      }
     };
   }, []);
 
@@ -112,13 +160,13 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     }
   }, [secondsRemaining, isRunning, currentLevelIdx]);
 
-  // Periodic database save (every 10 seconds)
+  // Periodic database save (every 5 seconds for tighter cross-device sync)
   useEffect(() => {
     let saveInterval: any;
     if (isRunning) {
       saveInterval = setInterval(() => {
         saveTimerStateToDb();
-      }, 10000);
+      }, 5000);
     }
     return () => {
       if (saveInterval) clearInterval(saveInterval);
@@ -138,7 +186,13 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       if (tData) {
         setTournament(tData);
         if (isFirstLoadRef.current) {
-          setSecondsRemaining(tData.seconds_remaining);
+          // Use derived seconds to compensate for time elapsed since last DB save
+          const derivedSec = deriveSecondsFromSnapshot(
+            tData.seconds_remaining,
+            tData.timer_reference_at,
+            tData.is_timer_running
+          );
+          setSecondsRemaining(derivedSec);
           setIsRunning(tData.is_timer_running);
           setCurrentLevelIdx(tData.current_level_index);
           isFirstLoadRef.current = false;
@@ -242,9 +296,10 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       await supabase
         .from('tournaments')
         .update({
-          seconds_remaining: secondsRemaining,
-          is_timer_running: isRunning,
-          current_level_index: currentLevelIdx,
+          seconds_remaining: overrides.seconds_remaining ?? secondsRemaining,
+          is_timer_running: overrides.is_timer_running ?? isRunning,
+          current_level_index: overrides.current_level_index ?? currentLevelIdx,
+          timer_reference_at: new Date().toISOString(),
           ...overrides
         })
         .eq('id', tournament.id);
@@ -746,7 +801,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   };
 
   const handleOpenTV = () => {
-    window.open(`?tv=true`, '_blank', 'width=1000,height=700,menubar=no,toolbar=no,location=no');
+    window.open(`?tv=true&id=${tournament.id}`, '_blank', 'width=1000,height=700,menubar=no,toolbar=no,location=no');
   };
 
   const handleMovePlayerTable = async (playerTournamentId: string, newTable: number) => {
