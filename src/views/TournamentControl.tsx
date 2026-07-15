@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
-import type { Tournament, TournamentPlayer, Level, BlindStructure, TournamentLog } from '../types';
-import { Play, Pause, FastForward, Rewind, Users, Award, ShieldAlert, Tv, ArrowLeft, RefreshCw, Shuffle, Undo2, RotateCcw, AlertTriangle } from 'lucide-react';
+import type { Tournament, TournamentPlayer, Level, BlindStructure, TournamentLog, Player } from '../types';
+import { Play, Pause, FastForward, Rewind, Users, Award, ShieldAlert, Tv, ArrowLeft, RefreshCw, Shuffle, Undo2, RotateCcw, AlertTriangle, Plus } from 'lucide-react';
 
 interface TournamentControlProps {
   tournament: Tournament;
@@ -14,6 +14,13 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   const [structure, setStructure] = useState<BlindStructure | null>(null);
   const [logs, setLogs] = useState<TournamentLog[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Late registration states
+  const [showLateModal, setShowLateModal] = useState(false);
+  const [allPlayers, setAllPlayers] = useState<Player[]>([]);
+  const [selectedLatePlayerId, setSelectedLatePlayerId] = useState('');
+  const [lateGuestName, setLateGuestName] = useState('');
+  const [isSubmittingLate, setIsSubmittingLate] = useState(false);
   
   // Timer state (local replica for speed)
   const [secondsRemaining, setSecondsRemaining] = useState(initialTournament.seconds_remaining);
@@ -820,6 +827,98 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     }
   };
 
+  const openLateRegistrationModal = async () => {
+    try {
+      const { data } = await supabase.from('players').select('*').order('name', { ascending: true });
+      setAllPlayers(data || []);
+      setSelectedLatePlayerId('');
+      setLateGuestName('');
+      setShowLateModal(true);
+    } catch (err) {
+      console.error('Error fetching directory players:', err);
+    }
+  };
+
+  const handleAddLatePlayer = async () => {
+    if (tournament.status === 'completed') return;
+    const isGuest = !selectedLatePlayerId;
+    if (isGuest && !lateGuestName.trim()) {
+      alert('Por favor, ingresa el nombre del invitado.');
+      return;
+    }
+
+    setIsSubmittingLate(true);
+    try {
+      // Find empty seat
+      const activePs = players.filter(p => p.status === 'active');
+      const maxPlayers = tournament.max_players_per_table;
+
+      const tableCounts: Record<number, number> = {};
+      activePs.forEach(p => {
+        if (p.table_number) {
+          tableCounts[p.table_number] = (tableCounts[p.table_number] || 0) + 1;
+        }
+      });
+
+      let targetTable: number | null = null;
+      let targetSeat: number | null = null;
+
+      const activeTables = Object.keys(tableCounts).map(Number).sort((a,b) => a-b);
+
+      // Find first table with < maxPlayers
+      for (const t of activeTables) {
+        if (tableCounts[t] < maxPlayers) {
+          targetTable = t;
+          break;
+        }
+      }
+
+      // If all are full or none exist, create table
+      if (targetTable === null) {
+        targetTable = activeTables.length > 0 ? Math.max(...activeTables) + 1 : 1;
+      }
+
+      // Find first seat
+      const seatsAtTable = new Set(activePs.filter(p => p.table_number === targetTable).map(p => p.seat_number));
+      for (let s = 1; s <= maxPlayers; s++) {
+        if (!seatsAtTable.has(s)) {
+          targetSeat = s;
+          break;
+        }
+      }
+      if (targetSeat === null) targetSeat = 1;
+
+      // Guest / Player properties
+      const newPlayerRow = {
+        tournament_id: tournament.id,
+        player_id: isGuest ? null : selectedLatePlayerId,
+        guest_name: isGuest ? lateGuestName.trim() : null,
+        status: 'active',
+        rebuys_count: 0,
+        has_add_on: false,
+        table_number: targetTable,
+        seat_number: targetSeat,
+        elimination_position: null,
+        payout_amount: 0
+      };
+
+      const { error } = await supabase.from('tournament_players').insert(newPlayerRow);
+      if (error) throw error;
+
+      const addedName = isGuest ? lateGuestName.trim() : (allPlayers.find(p => p.id === selectedLatePlayerId)?.name || 'Jugador');
+      addLog('timer_action', { message: `Registro Tardío: ${addedName} ingresó al torneo en Mesa ${targetTable} / Silla ${targetSeat}` });
+      speakAnnounce(`${addedName} ha ingresado como registro tardío en la mesa ${targetTable}`);
+
+      setShowLateModal(false);
+      fetchTournamentData();
+    } catch (err) {
+      console.error('Error adding late player:', err);
+      alert('Error al agregar al jugador.');
+    } finally {
+      setIsSubmittingLate(false);
+    }
+  };
+
   // Helper selectors
   const getCurrentLevel = (): Level | null => {
     if (!structure) return null;
@@ -1108,6 +1207,22 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
             <h3 style={styles.subTitle}><Users size={18} /> Jugadores Activos ({activePlayers.length})</h3>
             
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {tournament.status !== 'completed' && (
+                <button 
+                  className="btn btn-primary" 
+                  style={{ 
+                    padding: '6px 12px', 
+                    fontSize: '0.75rem', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '4px',
+                    marginRight: '6px'
+                  }} 
+                  onClick={openLateRegistrationModal}
+                >
+                  <Plus size={14} /> Registro Tardío
+                </button>
+              )}
               <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.02)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
                 <button 
                   className="btn" 
@@ -1410,6 +1525,84 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
             <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontSize: '0.75rem', textAlign: 'center' }}>
               Podrás deshacer esta acción durante 15 segundos después de confirmar.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Late Registration Modal */}
+      {showLateModal && (
+        <div style={styles.modalOverlay} onClick={() => setShowLateModal(false)}>
+          <div style={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.confirmIcon}>
+              <Plus size={32} color="var(--color-primary)" />
+            </div>
+            <h3 style={{ margin: '0 0 10px', fontSize: '1.2rem', color: '#ffffff' }}>Registro Tardío</h3>
+            <p style={{ margin: '0 0 20px', color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>
+              Registra un nuevo jugador local o un invitado en una mesa activa.
+            </p>
+
+            {/* Selector de jugador del directorio */}
+            <div className="form-group" style={{ textAlign: 'left', marginBottom: '16px' }}>
+              <label className="form-label" style={{ fontSize: '0.8rem', marginBottom: '6px' }}>Jugador del Directorio</label>
+              <select 
+                className="form-input" 
+                value={selectedLatePlayerId} 
+                onChange={(e) => {
+                  setSelectedLatePlayerId(e.target.value);
+                  if (e.target.value) setLateGuestName('');
+                }}
+                style={{ width: '100%', background: 'rgba(3,7,18,0.5)' }}
+              >
+                <option value="">-- Seleccionar Jugador Local --</option>
+                {allPlayers
+                  .filter(dp => !players.some(p => p.player_id === dp.id))
+                  .map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))
+                }
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '12px 0', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
+              <span style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', flex: 1 }}></span>
+              <span style={{ padding: '0 10px' }}>O REGISTRAR COMO INVITADO</span>
+              <span style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', flex: 1 }}></span>
+            </div>
+
+            {/* Input de Invitado */}
+            <div className="form-group" style={{ textAlign: 'left', marginBottom: '24px' }}>
+              <label className="form-label" style={{ fontSize: '0.8rem', marginBottom: '6px' }}>Nombre del Invitado</label>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="Ej. Juan Pérez" 
+                value={lateGuestName}
+                onChange={(e) => {
+                  setLateGuestName(e.target.value);
+                  if (e.target.value) setSelectedLatePlayerId('');
+                }}
+                style={{ width: '100%', background: 'rgba(3,7,18,0.5)' }}
+              />
+            </div>
+
+            <div style={styles.confirmButtons}>
+              <button 
+                className="btn btn-outline" 
+                style={{ flex: 1 }}
+                onClick={() => setShowLateModal(false)}
+                disabled={isSubmittingLate}
+              >
+                Cancelar
+              </button>
+              <button 
+                className="btn btn-primary" 
+                style={{ flex: 1 }}
+                onClick={handleAddLatePlayer}
+                disabled={isSubmittingLate || (!selectedLatePlayerId && !lateGuestName.trim())}
+              >
+                {isSubmittingLate ? 'Registrando...' : 'Registrar'}
+              </button>
+            </div>
           </div>
         </div>
       )}
