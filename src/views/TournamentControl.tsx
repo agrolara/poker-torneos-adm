@@ -1367,7 +1367,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: isRunning ? '#6EE7B7' : C.muted }}>
                 <span style={{ width: '10px', height: '10px', borderRadius: '5px', background: isRunning ? C.green : C.muted }}></span>
-                {activeLevel?.is_break ? 'Descanso' : `Nivel ${activeLevel?.level || 1}`} · {currentLevelIdx + 1} de {levelsCount} · {isRunning ? 'En juego' : 'En pausa'}
+                {isRunning ? 'En juego' : 'En pausa'} · Etapa {currentLevelIdx + 1} de {levelsCount}
               </span>
               {nextBreakSeconds !== null && !activeLevel?.is_break && (
                 <span style={{ fontSize: '15px', color: C.soft }}>Próximo descanso <strong style={{ color: C.text }}>en {formatLong(nextBreakSeconds)}</strong></span>
@@ -1377,13 +1377,16 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: '1 1 200px', minWidth: 0 }}>
                 <span style={labelCaps}>{activeLevel?.is_break ? 'Descanso' : 'Ciegas'}</span>
-                <span style={{ fontSize: 'clamp(36px, 4.5vw, 64px)', fontWeight: 700, lineHeight: 1, color: activeLevel?.is_break ? C.green : C.gold }}>
+                <span style={{ fontSize: 'clamp(30px, 3.4vw, 54px)', fontWeight: 700, lineHeight: 1, whiteSpace: 'nowrap', color: activeLevel?.is_break ? C.green : C.gold }}>
                   {activeLevel?.is_break ? 'BREAK' : `${money(activeLevel?.small_blind || 0)} / ${money(activeLevel?.big_blind || 0)}`}
                 </span>
                 {!activeLevel?.is_break && <span style={{ fontSize: '16px', color: C.soft }}>Ante {money(activeLevel?.ante || 0)}</span>}
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', flex: '2 1 320px', minWidth: 0 }}>
+                <span style={{ fontSize: 'clamp(32px, 3.6vw, 52px)', fontWeight: 800, lineHeight: 1, letterSpacing: '0.1em', textTransform: 'uppercase', color: activeLevel?.is_break ? C.green : C.text, background: activeLevel?.is_break ? 'rgba(52, 211, 153, 0.12)' : C.raised, border: `1px solid ${activeLevel?.is_break ? '#1F6B52' : C.borderStrong}`, borderRadius: '14px', padding: '10px 28px' }}>
+                  {activeLevel?.is_break ? 'Descanso' : `Nivel ${activeLevel?.level || 1}`}
+                </span>
                 <span className="control-timer-display" style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 'clamp(88px, 11vw, 168px)', fontWeight: 700, lineHeight: 0.9, letterSpacing: '-0.04em', color: secondsRemaining <= 60 && isRunning ? '#FCA5A5' : C.text }}>
                   {formatTime(secondsRemaining)}
                 </span>
@@ -1399,7 +1402,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                     <span style={{ fontSize: 'clamp(28px, 3vw, 40px)', fontWeight: 700, lineHeight: 1, color: C.green }}>Descanso · {nextLevel.duration} min</span>
                   ) : (
                     <>
-                      <span style={{ fontSize: 'clamp(28px, 3vw, 40px)', fontWeight: 700, lineHeight: 1 }}>{money(nextLevel.small_blind)} / {money(nextLevel.big_blind)}</span>
+                      <span style={{ fontSize: 'clamp(24px, 2.6vw, 40px)', fontWeight: 700, lineHeight: 1, whiteSpace: 'nowrap' }}>{money(nextLevel.small_blind)} / {money(nextLevel.big_blind)}</span>
                       <span style={{ fontSize: '16px', color: C.soft }}>Ante {money(nextLevel.ante || 0)}</span>
                     </>
                   )
