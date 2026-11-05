@@ -92,6 +92,12 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       : (initialTournament.timer_reference_at || null)
   );
   const lastAutoProgressedLevelRef = useRef<number>(-1);
+  // FIX niveles pegados: refs para que el intervalo use siempre la versión actual
+  const structureRef = useRef<BlindStructure | null>(null);
+  const handleLevelUpRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    structureRef.current = structure;
+  }, [structure]);
 
   const deriveSeconds = () => {
     const seconds_remaining = dbSecondsRemainingRef.current;
@@ -229,10 +235,10 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       setSecondsRemaining(derived);
 
       // Automatic level progression when remaining time hits 0
-      if (dbIsTimerRunningRef.current && derived === 0 && lastAutoProgressedLevelRef.current !== currentLevelIdxRef.current) {
-        console.log("LOG: Auto progression condition met, calling handleLevelUp");
+      // Solo marca el nivel como avanzado si la estructura ya cargó (si no, reintenta en el próximo tick)
+      if (dbIsTimerRunningRef.current && derived === 0 && structureRef.current && lastAutoProgressedLevelRef.current !== currentLevelIdxRef.current) {
         lastAutoProgressedLevelRef.current = currentLevelIdxRef.current;
-        handleLevelUp();
+        handleLevelUpRef.current();
       }
 
       // Play warning at 60 seconds (only once per level)
@@ -488,6 +494,9 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       alert('¡Has completado todos los niveles de ciegas!');
     }
   };
+
+  // Mantener el ref apuntando a la versión actual de handleLevelUp en cada render
+  handleLevelUpRef.current = handleLevelUp;
 
   const handleLevelDown = () => {
     if (!structure || currentLevelIdxRef.current === 0) return;
