@@ -219,13 +219,20 @@ export const TournamentSetup: React.FC<TournamentSetupProps> = ({ onBack, onNavi
         ...guestPlayers.map(name => ({ player_id: null, guest_name: name }))
       ];
 
-      // Shuffle participants randomly
-      const shuffled = [...participants].sort(() => Math.random() - 0.5);
+      // Sorteo realmente al azar (Fisher-Yates)
+      const shuffled = [...participants];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
 
-      // Assign tables and seats
+      // Mesas parejas: se reparte uno por mesa, en ronda (11 jugadores, máx. 10 => 6 y 5)
+      const maxPerTable = Math.max(1, Number(maxPlayersPerTable) || 1);
+      const tablesCount = Math.max(1, Math.ceil(shuffled.length / maxPerTable));
+
       const tournamentPlayersData = shuffled.map((player, idx) => {
-        const tableNumber = Math.floor(idx / maxPlayersPerTable) + 1;
-        const seatNumber = (idx % maxPlayersPerTable) + 1;
+        const tableNumber = (idx % tablesCount) + 1;
+        const seatNumber = Math.floor(idx / tablesCount) + 1;
 
         return {
           tournament_id: tourney.id,

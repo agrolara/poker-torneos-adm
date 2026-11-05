@@ -1087,11 +1087,12 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
 
       const activeTables = Object.keys(tableCounts).map(Number).sort((a,b) => a-b);
 
-      // Find first table with < maxPlayers
+      // Mesa con menos jugadores que todavía tenga espacio (mantiene las mesas parejas)
+      let fewest = Infinity;
       for (const t of activeTables) {
-        if (tableCounts[t] < maxPlayers) {
+        if (tableCounts[t] < maxPlayers && tableCounts[t] < fewest) {
+          fewest = tableCounts[t];
           targetTable = t;
-          break;
         }
       }
 
@@ -1528,48 +1529,52 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           )}
 
           {panelTab === 'tables' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
               {activeTableNumbers.map((tableNum) => {
-                const playersAtTable = activePlayers.filter(p => p.table_number === tableNum);
-                const seatsCount = tournament.max_players_per_table;
+                // Solo las sillas ocupadas, en orden de silla, repartidas parejo alrededor de la mesa
+                const playersAtTable = activePlayers
+                  .filter(p => p.table_number === tableNum)
+                  .sort((a, b) => (a.seat_number || 0) - (b.seat_number || 0));
+                const n = playersAtTable.length;
                 return (
                   <div key={tableNum} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' }}>
                       <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Mesa {tableNum}</h3>
-                      <span style={{ fontSize: '14px', color: C.soft }}>{playersAtTable.length} de {seatsCount} sillas ocupadas</span>
+                      <span style={{ fontSize: '14px', color: C.soft }}>{n} jugador{n === 1 ? '' : 'es'} · máx. {tournament.max_players_per_table}</span>
                     </div>
-                    <div style={{ position: 'relative', width: '100%', maxWidth: '760px', aspectRatio: '760 / 430', margin: '0 auto' }}>
-                      <div style={{ position: 'absolute', left: '14%', right: '14%', top: '22%', bottom: '22%', borderRadius: '999px', background: '#0F3B2E', border: '10px solid #1C2638', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '4px', textAlign: 'center', padding: '0 12px' }}>
-                        <span style={{ fontSize: '13px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8FD9BC' }}>Mesa {tableNum}</span>
-                        <span style={{ fontSize: '13px', color: '#8FD9BC' }}>Toca una silla para ver acciones</span>
-                      </div>
-                      {Array.from({ length: seatsCount }).map((_, seatIdx) => {
-                        const seatNum = seatIdx + 1;
-                        const player = playersAtTable.find(p => p.seat_number === seatNum);
-                        const angle = (seatIdx * (360 / seatsCount) - 90) * (Math.PI / 180);
-                        const left = 50 + 43 * Math.cos(angle);
-                        const top = 50 + 40 * Math.sin(angle);
-                        const isSel = !!player && player.id === selectedSeatPlayerId;
-                        return (
-                          <div key={seatNum} style={{ position: 'absolute', left: `${left}%`, top: `${top}%`, transform: 'translate(-50%, -50%)', width: '96px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-                            {player ? (
-                              <>
-                                <button type="button" aria-label={`Silla ${seatNum}: ${getPlayerName(player)}`} title={`Silla ${seatNum}: ${getPlayerName(player)}`}
-                                  onClick={() => setSelectedSeatPlayerId(isSel ? null : player.id)}
-                                  style={{ width: '56px', height: '56px', borderRadius: '28px', background: isSel ? C.amber : C.greenDark, color: isSel ? '#111827' : '#062B1F', border: isSel ? '3px solid #FDE68A' : 0, fontWeight: 700, fontSize: '15px', cursor: 'pointer' }}>
-                                  {initials(player)}
-                                </button>
-                                <span style={{ fontSize: '14px', fontWeight: 600, background: C.bg, padding: '2px 8px', borderRadius: '6px', maxWidth: '96px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getPlayerName(player)}</span>
-                              </>
-                            ) : (
-                              <>
-                                <span aria-label={`Silla ${seatNum} libre`} style={{ width: '56px', height: '56px', borderRadius: '28px', border: '2px dashed #3A4660', color: C.muted, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 600, boxSizing: 'border-box' }}>{seatNum}</span>
-                                <span style={{ fontSize: '13px', color: C.muted }}>Libre</span>
-                              </>
-                            )}
+                    <div style={{ overflowX: 'auto' }}>
+                      <div style={{ position: 'relative', width: '900px', height: '540px', margin: '0 auto' }}>
+                        <div style={{ position: 'absolute', left: '120px', top: '110px', width: '660px', height: '320px', borderRadius: '160px', background: '#1C2638', boxSizing: 'border-box', padding: '16px', boxShadow: `inset 0 0 0 2px ${C.borderStrong}` }}>
+                          <div style={{ width: '100%', height: '100%', borderRadius: '144px', background: '#0F3B2E', boxSizing: 'border-box', border: '2px solid #1F6B52', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', textAlign: 'center', padding: '0 24px' }}>
+                            <span style={{ fontSize: '13px', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#8FD9BC' }}>Poker Director</span>
+                            <span style={{ fontSize: '52px', fontWeight: 700, letterSpacing: '0.08em', color: '#CFF5E5', lineHeight: 1 }}>MESA {tableNum}</span>
+                            <span style={{ fontSize: '14px', color: '#8FD9BC', maxWidth: '420px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tournament.name}</span>
                           </div>
-                        );
-                      })}
+                        </div>
+                        {playersAtTable.map((player, i) => {
+                          const ang = (-90 + (i + 0.5) * 360 / Math.max(n, 1)) * Math.PI / 180;
+                          const left = Math.round(450 + 355 * Math.cos(ang) - 88);
+                          const top = Math.round(270 + 215 * Math.sin(ang) - 46);
+                          const isSel = player.id === selectedSeatPlayerId;
+                          return (
+                            <button key={player.id} type="button"
+                              aria-label={`Silla ${player.seat_number}: ${getPlayerName(player)}`}
+                              title={tournament.status === 'completed' ? getPlayerName(player) : `${getPlayerName(player)} (toca para ver acciones)`}
+                              onClick={() => setSelectedSeatPlayerId(isSel ? null : player.id)}
+                              style={{ position: 'absolute', left: `${left}px`, top: `${top}px`, width: '176px', boxSizing: 'border-box', background: C.panel, border: isSel ? `2px solid ${C.amber}` : `1px solid ${C.borderStrong}`, borderRadius: '12px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px', textAlign: 'left', color: C.text, cursor: 'pointer', boxShadow: '0 8px 20px rgba(0,0,0,0.35)' }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+                                <span style={{ ...avatar(isSel), width: '40px', height: '40px', borderRadius: '20px', fontSize: '14px' }}>{initials(player)}</span>
+                                <span style={{ flex: 1, minWidth: 0, fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getPlayerName(player)}</span>
+                                <span style={{ width: '26px', height: '26px', borderRadius: '13px', background: C.amber, color: '#111827', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, flex: 'none' }}>{player.seat_number ?? '-'}</span>
+                              </span>
+                              <span style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: C.soft, borderTop: `1px solid ${C.border}`, paddingTop: '6px', width: '100%' }}>
+                                <span>Recompras <strong style={{ color: C.text }}>{player.rebuys_count}</strong></span>
+                                <span>Add-on <strong style={{ color: player.has_add_on ? C.green : C.soft }}>{player.has_add_on ? 'Sí' : 'No'}</strong></span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 );
