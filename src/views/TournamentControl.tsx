@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Tournament, TournamentPlayer, Level, BlindStructure, TournamentLog, Player } from '../types';
-import { Play, Pause, FastForward, Rewind, Users, Award, ShieldAlert, Tv, ArrowLeft, RefreshCw, Shuffle, Undo2, RotateCcw, AlertTriangle, Plus } from 'lucide-react';
+import { Play, Pause, FastForward, Rewind, Award, ShieldAlert, Tv, ArrowLeft, Shuffle, Undo2, RotateCcw, AlertTriangle, Plus, Search, X, MoreHorizontal } from 'lucide-react';
 
 interface TournamentControlProps {
   tournament: Tournament;
@@ -25,18 +25,11 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   // Timer state (local replica for speed)
   const [secondsRemaining, setSecondsRemaining] = useState(initialTournament.seconds_remaining);
   const [isRunning, setIsRunning] = useState(initialTournament.is_timer_running);
-  const [controlViewMode, setControlViewMode] = useState<'list' | 'visual'>('visual');
+  const [panelTab, setPanelTab] = useState<'players' | 'tables' | 'eliminated'>('players');
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [selectedSeatPlayerId, setSelectedSeatPlayerId] = useState<string | null>(null);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
-  const getSeatPosition = (seatIndex: number, totalSeats: number) => {
-    // Offset by -90 degrees so seat 1 is at the top center
-    const angle = (seatIndex * (360 / totalSeats) - 90) * (Math.PI / 180);
-    // Oval radius
-    const rx = 40; // horizontal radius in %
-    const ry = 33; // vertical radius in %
-    const x = 50 + rx * Math.cos(angle);
-    const y = 50 + ry * Math.sin(angle);
-    return { left: `${x}%`, top: `${y}%` };
-  };
   const [currentLevelIdx, setCurrentLevelIdx] = useState(initialTournament.current_level_index);
   
   // Seating balancing recommendation
@@ -1247,6 +1240,51 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   const activeTableNumbers = Array.from(new Set(activePlayers.filter(p => p.table_number !== null).map(p => p.table_number as number))).sort((a,b) => a-b);
   const { prizePool, payouts, rakeTotal } = calculateFinancials();
 
+  // --- Datos derivados para la vista rediseñada ---
+  const levelsArr = getLevelsArray();
+  const levelsCount = Math.max(levelsArr.length, 1);
+  const levelTotalSecs = (activeLevel?.duration || 0) * 60;
+  const levelProgress = levelTotalSecs > 0 ? Math.min(1, Math.max(0, 1 - secondsRemaining / levelTotalSecs)) : 0;
+  const nextBreakSeconds = (() => {
+    let acc = secondsRemaining;
+    for (let i = currentLevelIdx + 1; i < levelsArr.length; i++) {
+      if (levelsArr[i].is_break) return acc;
+      acc += levelsArr[i].duration * 60;
+    }
+    return null;
+  })();
+  const formatLong = (secs: number) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const sec = secs % 60;
+    return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}` : formatTime(secs);
+  };
+  const money = (n: number) => Number(n || 0).toLocaleString('es-CL');
+  const initials = (p: TournamentPlayer) => getPlayerName(p).substring(0, 2).toUpperCase();
+  const avgStack = calculateAverageStack(activePlayers.length);
+  const totalRebuys = players.reduce((acc, p) => acc + (p.rebuys_count || 0), 0);
+  const totalAddons = players.filter(p => p.has_add_on).length;
+  const searchTerm = playerSearch.trim().toLowerCase();
+  const matchesSearch = (p: TournamentPlayer) => !searchTerm || getPlayerName(p).toLowerCase().includes(searchTerm);
+  const filteredActive = activePlayers
+    .filter(matchesSearch)
+    .sort((a, b) => (a.table_number || 0) - (b.table_number || 0) || (a.seat_number || 0) - (b.seat_number || 0));
+  const eliminatedPlayers = players.filter(p => p.status === 'eliminated');
+  const filteredEliminated = eliminatedPlayers
+    .filter(matchesSearch)
+    .sort((a, b) => (a.elimination_position || 999) - (b.elimination_position || 999));
+  const selectedSeatPlayer = activePlayers.find(p => p.id === selectedSeatPlayerId) || null;
+  const logText = (log: TournamentLog): string => {
+    const pl = log.payload || {};
+    switch (log.event_type) {
+      case 'elimination': return `${pl.player_name} eliminado (${pl.position}°)`;
+      case 'rebuy': return `${pl.player_name}: recompra #${pl.count}`;
+      case 'addon': return `${pl.player_name}: add-on`;
+      case 'level_change': return pl.is_break ? 'Comienza descanso' : `Nivel ${pl.level} (${pl.small_blind}/${pl.big_blind})`;
+      default: return pl.message || log.event_type;
+    }
+  };
+
   const sortedWinners = [...players]
     .filter(p => p.elimination_position !== null)
     .sort((a, b) => (a.elimination_position || 99) - (b.elimination_position || 99));
@@ -1256,332 +1294,275 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   }
 
   return (
-    <div style={styles.container}>
-      {/* Top Header */}
-      <div style={styles.header}>
-        <button className="btn btn-outline" style={styles.backBtn} onClick={onBack}>
-          <ArrowLeft size={16} /> Dashboard
-        </button>
-        <h2 style={styles.title}>{tournament.name}</h2>
-        <button className="btn btn-accent" onClick={handleOpenTV}>
-          Proyectar Pantalla TV <Tv size={16} />
-        </button>
-      </div>
-
-      {/* Balancing Recommendation Alert */}
-      {balancingAlert && (
-        <div style={styles.balancingAlertCard}>
-          <ShieldAlert size={20} color="var(--color-secondary)" />
-          <span style={styles.balancingText}>{balancingAlert}</span>
-          
-          <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {balancingAlert.includes('Unir Mesas') && (
-              <button 
-                className="btn" 
-                style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', background: '#dc2626', color: '#ffffff', border: 'none', borderRadius: '6px', fontWeight: 700 }} 
-                onClick={handleMergeTables}
-              >
-                Unir Mesas <Shuffle size={12} />
-              </button>
-            )}
-            {balancingAlert.includes('Desbalance') && (
-              <button 
-                className="btn btn-accent" 
-                style={{ padding: '4px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }} 
-                onClick={handleAutoBalance}
-              >
-                Balancear Mesa <Shuffle size={12} />
-              </button>
-            )}
-            <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={fetchTournamentData}>
-              Recalcular <RefreshCw size={12} />
-            </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', color: C.text }}>
+      {/* Header */}
+      <header style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+          <button type="button" onClick={onBack} style={ghostBtn}>
+            <ArrowLeft size={16} /> Panel
+          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{ fontSize: '12px', color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              {tournament.status === 'completed' ? 'Torneo finalizado' : 'En curso'}
+            </span>
+            <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 700 }}>{tournament.name}</h2>
           </div>
         </div>
-      )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', position: 'relative' }}>
+          <button type="button" onClick={handleOpenTV} style={secondaryBtn}>
+            <Tv size={18} /> Abrir pantalla TV
+          </button>
+          <button type="button" aria-label="Más opciones del torneo" onClick={() => setShowMoreMenu(v => !v)} style={{ ...ghostBtn, width: '44px', justifyContent: 'center', padding: 0 }}>
+            <MoreHorizontal size={18} />
+          </button>
+          {showMoreMenu && (
+            <div style={{ position: 'absolute', right: 0, top: '52px', zIndex: 20, background: C.panel, border: `1px solid ${C.borderStrong}`, borderRadius: '12px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '220px', boxShadow: '0 12px 30px rgba(0,0,0,0.4)' }}>
+              {tournament.status !== 'completed' && (
+                <button type="button" style={menuItemBtn} onClick={() => { setShowMoreMenu(false); handleManualCompleteTournament(); }}>
+                  Finalizar torneo
+                </button>
+              )}
+              <button type="button" style={{ ...menuItemBtn, color: C.danger }} onClick={() => { setShowMoreMenu(false); handleDeleteTournament(); }}>
+                Eliminar torneo
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
 
-      {/* Main Grid: Control clock on Left, Players grid on Right */}
-      <div className="control-main-grid" style={styles.controlGrid}>
-        {/* Left Side: Clock Card and Stats */}
-        <div style={styles.leftColumn}>
-          {/* Clock Display Card */}
-          <div className="glass-panel" style={{ ...styles.clockCard, borderColor: isRunning ? 'var(--color-primary)' : 'var(--border-color)' }}>
-            {tournament.status === 'completed' ? (
-              <div style={styles.completedHeaderCard}>
-                <div style={styles.completedBadge}><Award size={20} color="#f59e0b" /> TORNEO CONCLUIDO</div>
-                
-                {/* Podium representation */}
-                <div style={styles.podiumContainer}>
-                  {/* 2nd Place */}
-                  {sortedWinners[1] && (
-                    <div style={styles.podiumStep2}>
-                      <div style={styles.podiumAvatar}>🥈</div>
-                      <div style={styles.podiumName}>{getPlayerName(sortedWinners[1])}</div>
-                      <div style={styles.podiumPrize}>${(sortedWinners[1].payout_amount || payouts[1] || 0).toLocaleString()}</div>
-                      <div style={styles.podiumLabel}>2° Puesto</div>
-                    </div>
-                  )}
-
-                  {/* 1st Place */}
-                  {sortedWinners[0] && (
-                    <div style={styles.podiumStep1}>
-                      <div style={styles.podiumAvatarMain}>🏆</div>
-                      <div style={styles.podiumNameMain}>{getPlayerName(sortedWinners[0])}</div>
-                      <div style={styles.podiumPrizeMain}>${(sortedWinners[0].payout_amount || payouts[0] || 0).toLocaleString()}</div>
-                      <div style={styles.podiumLabelMain}>GANADOR</div>
-                    </div>
-                  )}
-
-                  {/* 3rd Place */}
-                  {sortedWinners[2] && (
-                    <div style={styles.podiumStep3}>
-                      <div style={styles.podiumAvatar}>🥉</div>
-                      <div style={styles.podiumName}>{getPlayerName(sortedWinners[2])}</div>
-                      <div style={styles.podiumPrize}>${(sortedWinners[2].payout_amount || payouts[2] || 0).toLocaleString()}</div>
-                      <div style={styles.podiumLabel}>3° Puesto</div>
-                    </div>
-                  )}
+      {/* Reloj protagonista */}
+      <section aria-label="Reloj del torneo" style={{ background: '#0E1626', border: `1px solid ${isRunning ? '#1F6B52' : C.border}`, borderRadius: '20px', padding: '28px 32px 24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {tournament.status === 'completed' ? (
+          <div style={styles.completedHeaderCard}>
+            <div style={styles.completedBadge}><Award size={20} color="#f59e0b" /> TORNEO CONCLUIDO</div>
+            <div style={styles.podiumContainer}>
+              {sortedWinners[1] && (
+                <div style={styles.podiumStep2}>
+                  <div style={styles.podiumAvatar}>🥈</div>
+                  <div style={styles.podiumName}>{getPlayerName(sortedWinners[1])}</div>
+                  <div style={styles.podiumPrize}>${money(sortedWinners[1].payout_amount || payouts[1] || 0)}</div>
+                  <div style={styles.podiumLabel}>2° Puesto</div>
                 </div>
-              </div>
-            ) : (
-              <>
-                <div style={styles.levelHeader}>
-                  {activeLevel?.is_break ? 'DESCANSO' : `NIVEL ${activeLevel?.level || 1}`}
+              )}
+              {sortedWinners[0] && (
+                <div style={styles.podiumStep1}>
+                  <div style={styles.podiumAvatarMain}>🏆</div>
+                  <div style={styles.podiumNameMain}>{getPlayerName(sortedWinners[0])}</div>
+                  <div style={styles.podiumPrizeMain}>${money(sortedWinners[0].payout_amount || payouts[0] || 0)}</div>
+                  <div style={styles.podiumLabelMain}>GANADOR</div>
                 </div>
-                
-                <div className="control-timer-display" style={styles.timerDisplay}>
-                  {formatTime(secondsRemaining)}
+              )}
+              {sortedWinners[2] && (
+                <div style={styles.podiumStep3}>
+                  <div style={styles.podiumAvatar}>🥉</div>
+                  <div style={styles.podiumName}>{getPlayerName(sortedWinners[2])}</div>
+                  <div style={styles.podiumPrize}>${money(sortedWinners[2].payout_amount || payouts[2] || 0)}</div>
+                  <div style={styles.podiumLabel}>3° Puesto</div>
                 </div>
-
-                <div style={{
-                  ...styles.blindsDisplay,
-                  color: activeLevel?.is_break ? '#10b981' : '#ffffff',
-                  fontSize: activeLevel?.is_break ? '1.8rem' : '2.2rem'
-                }}>
-                  {activeLevel?.is_break ? (
-                    'TIEMPO DE BREAK'
-                  ) : (
-                    <>${activeLevel?.small_blind || 0} / ${activeLevel?.big_blind || 0}
-                    {activeLevel?.ante ? <span style={styles.anteLabel}> (Ante: ${activeLevel.ante})</span> : ''}</>
-                  )}
-                </div>
-
-                {/* Timer Controllers */}
-                <div style={styles.clockControllers}>
-                  <button style={styles.controllerBtn} onClick={handleLevelDown} title="Nivel Anterior">
-                    <Rewind size={20} />
-                  </button>
-                  
-                  <button 
-                    style={{ 
-                      ...styles.playBtn, 
-                      backgroundColor: isRunning ? 'var(--color-danger)' : 'var(--color-primary)',
-                      boxShadow: isRunning ? '0 0 15px rgba(239, 68, 68, 0.4)' : '0 0 15px rgba(16, 185, 129, 0.4)'
-                    }} 
-                    onClick={handlePlayPause}
-                    title={isRunning ? 'Pausar' : 'Iniciar'}
-                  >
-                    {isRunning ? <Pause size={24} color="#ffffff" /> : <Play size={24} color="#030712" />}
-                  </button>
-
-                  <button style={styles.controllerBtn} onClick={handleLevelUp} title="Siguiente Nivel">
-                    <FastForward size={20} />
-                  </button>
-                </div>
-
-                {/* Next Level Info */}
-                {nextLevel && (
-                  <div style={styles.nextLevelInfo}>
-                    {nextLevel.is_break ? (
-                      <>Próximo: <span style={{ color: '#10b981' }}>Descanso / Break ({nextLevel.duration} min)</span></>
-                    ) : (
-                      <>Siguiente Nivel: <span>${nextLevel.small_blind}/${nextLevel.big_blind}</span> (Ante: ${nextLevel.ante})</>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
+              )}
+            </div>
           </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: isRunning ? '#6EE7B7' : C.muted }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '5px', background: isRunning ? C.green : C.muted }}></span>
+                {activeLevel?.is_break ? 'Descanso' : `Nivel ${activeLevel?.level || 1}`} · {currentLevelIdx + 1} de {levelsCount} · {isRunning ? 'En juego' : 'En pausa'}
+              </span>
+              {nextBreakSeconds !== null && !activeLevel?.is_break && (
+                <span style={{ fontSize: '15px', color: C.soft }}>Próximo descanso <strong style={{ color: C.text }}>en {formatLong(nextBreakSeconds)}</strong></span>
+              )}
+            </div>
 
-          {/* Stats Summary Card */}
-          <div className="glass-panel" style={styles.statsCard}>
-            <div style={styles.statRow}>
-              <span>Jugadores Activos:</span>
-              <span style={styles.statVal}>{activePlayers.length} / {players.length}</span>
-            </div>
-            <div style={styles.statRow}>
-              <span>Pila Promedio:</span>
-              <span style={styles.statVal}>${calculateAverageStack(activePlayers.length).toLocaleString()}</span>
-            </div>
-            <div style={styles.statRow}>
-              <span>Monto a Repartir:</span>
-              <span style={{ ...styles.statVal, color: 'var(--color-primary)' }}>${prizePool.toLocaleString()}</span>
-            </div>
-            {tournament.rake_amount > 0 && (
-              <div style={styles.statRow}>
-                <span>Rake de Fecha:</span>
-                <span style={{ ...styles.statVal, color: 'var(--color-secondary)' }}>${rakeTotal.toLocaleString()}</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: '1 1 200px', minWidth: 0 }}>
+                <span style={labelCaps}>{activeLevel?.is_break ? 'Descanso' : 'Ciegas'}</span>
+                <span style={{ fontSize: 'clamp(36px, 4.5vw, 64px)', fontWeight: 700, lineHeight: 1, color: activeLevel?.is_break ? C.green : C.gold }}>
+                  {activeLevel?.is_break ? 'BREAK' : `${money(activeLevel?.small_blind || 0)} / ${money(activeLevel?.big_blind || 0)}`}
+                </span>
+                {!activeLevel?.is_break && <span style={{ fontSize: '16px', color: C.soft }}>Ante {money(activeLevel?.ante || 0)}</span>}
               </div>
-            )}
-            
-            <div style={styles.payoutsList}>
-              <h4 style={styles.payoutTitle}><Award size={14} /> Distribución de Premios</h4>
-              {payouts.map((amount, idx) => (
-                <div key={idx} style={styles.payoutItem}>
-                  <span>{idx + 1}° Puesto ({tournament.payout_structure[idx]}%):</span>
-                  <span style={styles.payoutVal}>${amount.toLocaleString()}</span>
+
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', flex: '2 1 320px', minWidth: 0 }}>
+                <span className="control-timer-display" style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 'clamp(88px, 11vw, 168px)', fontWeight: 700, lineHeight: 0.9, letterSpacing: '-0.04em', color: secondsRemaining <= 60 && isRunning ? '#FCA5A5' : C.text }}>
+                  {formatTime(secondsRemaining)}
+                </span>
+                <div role="img" aria-label={`Progreso del nivel: ${Math.round(levelProgress * 100)} por ciento`} style={{ width: '100%', maxWidth: '520px', height: '10px', borderRadius: '5px', background: C.border, overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.round(levelProgress * 100)}%`, height: '10px', background: C.green, borderRadius: '5px', transition: 'width 0.3s linear' }}></div>
                 </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end', textAlign: 'right', flex: '1 1 200px', minWidth: 0 }}>
+                <span style={labelCaps}>Siguiente nivel</span>
+                {nextLevel ? (
+                  nextLevel.is_break ? (
+                    <span style={{ fontSize: 'clamp(28px, 3vw, 40px)', fontWeight: 700, lineHeight: 1, color: C.green }}>Descanso · {nextLevel.duration} min</span>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 'clamp(28px, 3vw, 40px)', fontWeight: 700, lineHeight: 1 }}>{money(nextLevel.small_blind)} / {money(nextLevel.big_blind)}</span>
+                      <span style={{ fontSize: '16px', color: C.soft }}>Ante {money(nextLevel.ante || 0)}</span>
+                    </>
+                  )
+                ) : (
+                  <span style={{ fontSize: '20px', color: C.soft }}>Último nivel</span>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
+              <button type="button" aria-label="Nivel anterior" title="Nivel Anterior" onClick={handleLevelDown} style={roundBtn(60)}>
+                <Rewind size={22} />
+              </button>
+              <button type="button" aria-label={isRunning ? 'Pausar reloj' : 'Iniciar reloj'} title={isRunning ? 'Pausar' : 'Iniciar'} onClick={handlePlayPause}
+                style={{ ...roundBtn(88), background: isRunning ? C.amber : C.green, border: 0, color: '#111827' }}>
+                {isRunning ? <Pause size={34} fill="currentColor" /> : <Play size={34} fill="currentColor" />}
+              </button>
+              <button type="button" aria-label="Siguiente nivel" title="Siguiente Nivel" onClick={handleLevelUp} style={roundBtn(60)}>
+                <FastForward size={22} />
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-start' }}>
+        {/* Panel principal: jugadores / mesas / eliminados */}
+        <section aria-label="Jugadores" style={{ ...panel, flex: '999 1 560px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div role="tablist" aria-label="Vistas" style={{ display: 'flex', gap: '4px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '4px' }}>
+              {([
+                ['players', `Jugadores · ${activePlayers.length}`],
+                ['tables', `Mesas · ${activeTableNumbers.length}`],
+                ['eliminated', `Eliminados · ${eliminatedPlayers.length}`],
+              ] as const).map(([key, label]) => (
+                <button key={key} type="button" role="tab" aria-selected={panelTab === key} onClick={() => setPanelTab(key)}
+                  style={{ minHeight: '40px', padding: '0 16px', borderRadius: '9px', border: 0, cursor: 'pointer', fontSize: '14px', fontWeight: panelTab === key ? 600 : 500, background: panelTab === key ? C.raised : 'transparent', color: panelTab === key ? C.text : C.soft }}>
+                  {label}
+                </button>
               ))}
             </div>
-          </div>
-
-          {/* Actions Card */}
-          <div className="glass-panel" style={styles.actionsCard}>
-            <h4 style={styles.actionsTitle}>Acciones del Torneo</h4>
-            <div style={styles.actionsButtons}>
-              {tournament.status !== 'completed' && (
-                <button 
-                  className="btn btn-warning" 
-                  style={styles.finishBtn}
-                  onClick={handleManualCompleteTournament}
-                >
-                  Finalizar Torneo
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', flex: '1 1 280px', justifyContent: 'flex-end' }}>
+              {panelTab !== 'tables' && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', background: C.bg, border: `1px solid ${C.borderStrong}`, borderRadius: '10px', padding: '0 12px', minHeight: '44px', flex: '1 1 200px', maxWidth: '320px', color: C.muted }}>
+                  <Search size={16} />
+                  <input type="search" aria-label="Buscar jugador" placeholder="Buscar jugador…" value={playerSearch} onChange={(e) => setPlayerSearch(e.target.value)}
+                    style={{ flex: 1, minWidth: 0, background: 'transparent', border: 0, outline: 'none', color: C.text, fontSize: '14px' }} />
+                </label>
+              )}
+              {panelTab === 'tables' && tournament.status !== 'completed' && activeTableNumbers.length > 1 && (
+                <button type="button" style={secondaryBtn} onClick={handleAutoBalance}>
+                  <Shuffle size={16} /> Balancear mesas
                 </button>
               )}
-              <button 
-                className="btn btn-danger" 
-                style={styles.deleteBtn}
-                onClick={handleDeleteTournament}
-              >
-                Eliminar Torneo
-              </button>
+              {tournament.status !== 'completed' && (
+                <button type="button" onClick={openLateRegistrationModal} style={{ ...secondaryBtn, background: C.greenDark, color: '#062B1F', border: 0, fontWeight: 700 }}>
+                  <Plus size={16} /> Registro tardío
+                </button>
+              )}
             </div>
           </div>
-        </div>
 
-        {/* Right Side: Players Control Table */}
-        <div className="glass-panel" style={styles.rightColumn}>
-          <div style={styles.playersHeader}>
-            <h3 style={styles.subTitle}><Users size={18} /> Jugadores Activos ({activePlayers.length})</h3>
-            
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              {tournament.status !== 'completed' && (
-                <button 
-                  className="btn btn-primary" 
-                  style={{ 
-                    padding: '6px 12px', 
-                    fontSize: '0.75rem', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '4px',
-                    marginRight: '6px'
-                  }} 
-                  onClick={openLateRegistrationModal}
-                >
-                  <Plus size={14} /> Registro Tardío
-                </button>
-              )}
-              <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.02)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                <button 
-                  className="btn" 
-                  style={{ 
-                    padding: '4px 10px', 
-                    fontSize: '0.75rem', 
-                    borderRadius: '4px',
-                    background: controlViewMode === 'visual' ? 'var(--color-primary)' : 'transparent',
-                    color: controlViewMode === 'visual' ? '#000000' : 'var(--color-text-secondary)',
-                    border: 'none',
-                    margin: 0
-                  }}
-                  onClick={() => setControlViewMode('visual')}
-                >
-                  Mesas Visual
-                </button>
-                <button 
-                  className="btn" 
-                  style={{ 
-                    padding: '4px 10px', 
-                    fontSize: '0.75rem', 
-                    borderRadius: '4px',
-                    background: controlViewMode === 'list' ? 'var(--color-primary)' : 'transparent',
-                    color: controlViewMode === 'list' ? '#000000' : 'var(--color-text-secondary)',
-                    border: 'none',
-                    margin: 0
-                  }}
-                  onClick={() => setControlViewMode('list')}
-                >
-                  Lista
-                </button>
+          {panelTab === 'players' && (
+            <div style={{ overflowX: 'auto' }}>
+              <div style={{ minWidth: '640px', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ ...rowGrid, padding: '0 12px 10px', borderBottom: `1px solid ${C.border}` }}>
+                  <span style={labelCaps}>Jugador</span><span style={labelCaps}>Mesa · Silla</span><span style={labelCaps}>Recompras</span><span style={labelCaps}>Add-on</span><span style={{ ...labelCaps, textAlign: 'right' }}>Acciones</span>
+                </div>
+                {filteredActive.map((p) => (
+                  <div key={p.id} style={{ ...rowGrid, alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid #172036' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                      <span style={avatar(false)}>{initials(p)}</span>
+                      <span style={{ fontSize: '16px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getPlayerName(p)}</span>
+                    </span>
+                    <span style={{ fontSize: '14px', color: C.soft }}>M{p.table_number ?? '-'} · S{p.seat_number ?? '-'}</span>
+                    <span style={{ fontSize: '15px', fontWeight: 600 }}>{p.rebuys_count}</span>
+                    <span style={{ fontSize: '14px', color: p.has_add_on ? C.green : C.muted, fontWeight: p.has_add_on ? 700 : 400 }}>{p.has_add_on ? 'Sí' : 'No'}</span>
+                    <span style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                      {tournament.status !== 'completed' && (
+                        <>
+                          <button type="button" style={smallBtn} title="Registrar Recompra" onClick={() => handleAddPlayerAction(p, 'rebuy')}>+ Recompra</button>
+                          {!p.has_add_on && (
+                            <button type="button" style={smallBtn} title="Registrar Add-On" onClick={() => handleAddPlayerAction(p, 'addon')}>+ Add-on</button>
+                          )}
+                          <button type="button" aria-label={`Eliminar a ${getPlayerName(p)}`} title="Eliminar" onClick={() => handleAddPlayerAction(p, 'eliminate')}
+                            style={{ width: '40px', height: '40px', background: 'transparent', color: '#FCA5A5', border: '1px solid #4A2530', borderRadius: '9px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                            <X size={16} />
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                ))}
+                {filteredActive.length === 0 && (
+                  <div style={{ padding: '24px 12px', color: C.muted, fontSize: '14px' }}>
+                    {playerSearch ? 'Ningún jugador activo coincide con la búsqueda.' : 'No hay jugadores activos.'}
+                  </div>
+                )}
               </div>
-              <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={fetchTournamentData}>
-                Actualizar <RefreshCw size={14} />
-              </button>
             </div>
-          </div>
+          )}
 
-          {controlViewMode === 'visual' ? (
-            <div style={styles.tablesVisualContainer}>
+          {panelTab === 'eliminated' && (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {filteredEliminated.map((p) => (
+                <div key={p.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', justifyContent: 'space-between', padding: '10px 12px', borderBottom: '1px solid #172036' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ minWidth: '44px', fontSize: '18px', fontWeight: 700, color: C.gold }}>{p.elimination_position ? `${p.elimination_position}°` : '-'}</span>
+                    <span style={{ fontSize: '16px', fontWeight: 600 }}>{getPlayerName(p)}</span>
+                    <span style={{ fontSize: '13px', color: C.muted }}>{p.rebuys_count} recompras{p.has_add_on ? ' · add-on' : ''}</span>
+                  </span>
+                  {tournament.status !== 'completed' && (
+                    <button type="button" style={smallBtn} onClick={() => handleRestorePlayer(p)} title="Restituir jugador al torneo">
+                      <RotateCcw size={14} /> Restituir
+                    </button>
+                  )}
+                </div>
+              ))}
+              {filteredEliminated.length === 0 && (
+                <div style={{ padding: '24px 12px', color: C.muted, fontSize: '14px' }}>Todavía no hay eliminados.</div>
+              )}
+            </div>
+          )}
+
+          {panelTab === 'tables' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               {activeTableNumbers.map((tableNum) => {
                 const playersAtTable = activePlayers.filter(p => p.table_number === tableNum);
-                
+                const seatsCount = tournament.max_players_per_table;
                 return (
-                  <div key={tableNum} style={styles.tableCard}>
-                    <div style={styles.tableCardHeader}>
-                      <h4 style={styles.tableTitle}>Mesa {tableNum}</h4>
-                      <span style={styles.tableCountLabel}>{playersAtTable.length} Jugadores</span>
+                  <div key={tableNum} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' }}>
+                      <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>Mesa {tableNum}</h3>
+                      <span style={{ fontSize: '14px', color: C.soft }}>{playersAtTable.length} de {seatsCount} sillas ocupadas</span>
                     </div>
-
-                    {/* Visual Table Wrapper */}
-                    <div style={styles.visualTableWrapper}>
-                      {/* Felt shape */}
-                      <div style={styles.tableFelt}>
-                        <div style={styles.feltCenter}>
-                          <span style={styles.feltLabel}>{tournament.name}</span>
-                          <span style={styles.feltSub}>Mesa {tableNum}</span>
-                        </div>
+                    <div style={{ position: 'relative', width: '100%', maxWidth: '760px', aspectRatio: '760 / 430', margin: '0 auto' }}>
+                      <div style={{ position: 'absolute', left: '14%', right: '14%', top: '22%', bottom: '22%', borderRadius: '999px', background: '#0F3B2E', border: '10px solid #1C2638', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '4px', textAlign: 'center', padding: '0 12px' }}>
+                        <span style={{ fontSize: '13px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8FD9BC' }}>Mesa {tableNum}</span>
+                        <span style={{ fontSize: '13px', color: '#8FD9BC' }}>Toca una silla para ver acciones</span>
                       </div>
-
-                      {/* Seats */}
-                      {Array.from({ length: tournament.max_players_per_table }).map((_, seatIdx) => {
+                      {Array.from({ length: seatsCount }).map((_, seatIdx) => {
                         const seatNum = seatIdx + 1;
                         const player = playersAtTable.find(p => p.seat_number === seatNum);
-                        const pos = getSeatPosition(seatIdx, tournament.max_players_per_table);
-
+                        const angle = (seatIdx * (360 / seatsCount) - 90) * (Math.PI / 180);
+                        const left = 50 + 43 * Math.cos(angle);
+                        const top = 50 + 40 * Math.sin(angle);
+                        const isSel = !!player && player.id === selectedSeatPlayerId;
                         return (
-                          <div 
-                            key={seatNum} 
-                            style={{
-                              ...styles.seatNode,
-                              ...pos,
-                            }}
-                          >
+                          <div key={seatNum} style={{ position: 'absolute', left: `${left}%`, top: `${top}%`, transform: 'translate(-50%, -50%)', width: '96px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
                             {player ? (
-                              <div 
-                                style={{
-                                  ...styles.seatActive,
-                                  cursor: tournament.status === 'completed' ? 'default' : 'pointer'
-                                }}
-                                onClick={() => {
-                                  if (tournament.status !== 'completed') {
-                                    handleAddPlayerAction(player, 'eliminate');
-                                  }
-                                }}
-                                title={tournament.status === 'completed' ? `Asiento ${seatNum}: ${getPlayerName(player)}` : `Asiento ${seatNum}: ${getPlayerName(player)} (Haz clic para acciones)`}
-                              >
-                                <div style={styles.seatAvatar}>
-                                  {getPlayerName(player).substring(0, 2).toUpperCase()}
-                                </div>
-                                <div style={styles.seatNameBadge}>
-                                  <span style={styles.seatPlayerName}>{getPlayerName(player)}</span>
-                                  {player.rebuys_count > 0 && (
-                                    <span style={styles.seatRebuys}>R:{player.rebuys_count}</span>
-                                  )}
-                                </div>
-                              </div>
+                              <>
+                                <button type="button" aria-label={`Silla ${seatNum}: ${getPlayerName(player)}`} title={`Silla ${seatNum}: ${getPlayerName(player)}`}
+                                  onClick={() => setSelectedSeatPlayerId(isSel ? null : player.id)}
+                                  style={{ width: '56px', height: '56px', borderRadius: '28px', background: isSel ? C.amber : C.greenDark, color: isSel ? '#111827' : '#062B1F', border: isSel ? '3px solid #FDE68A' : 0, fontWeight: 700, fontSize: '15px', cursor: 'pointer' }}>
+                                  {initials(player)}
+                                </button>
+                                <span style={{ fontSize: '14px', fontWeight: 600, background: C.bg, padding: '2px 8px', borderRadius: '6px', maxWidth: '96px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getPlayerName(player)}</span>
+                              </>
                             ) : (
-                              <div style={styles.seatEmpty} title={`Asiento ${seatNum}: Vacío`}>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{seatNum}</span>
-                              </div>
+                              <>
+                                <span aria-label={`Silla ${seatNum} libre`} style={{ width: '56px', height: '56px', borderRadius: '28px', border: '2px dashed #3A4660', color: C.muted, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 600, boxSizing: 'border-box' }}>{seatNum}</span>
+                                <span style={{ fontSize: '13px', color: C.muted }}>Libre</span>
+                              </>
                             )}
                           </div>
                         );
@@ -1590,134 +1571,110 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                   </div>
                 );
               })}
-
               {activeTableNumbers.length === 0 && (
-                <div style={styles.emptyState}>
-                  No hay mesas activas. Registra jugadores e inicia el torneo.
-                </div>
+                <div style={{ padding: '24px 12px', color: C.muted, fontSize: '14px' }}>No hay mesas activas.</div>
               )}
             </div>
-          ) : (
-            <div style={styles.tableScroll}>
-              <table style={styles.table}>
-                <thead>
-                  <tr style={styles.tableHeaderRow}>
-                    <th style={styles.th}>Jugador</th>
-                    <th style={styles.th}>Mesa / Asiento</th>
-                    <th style={styles.th}>Recompras</th>
-                    <th style={styles.th}>Add-On</th>
-                    <th style={{ ...styles.th, textAlign: 'right' }}>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {players.map((p) => {
-                    const isActive = p.status === 'active';
-                    return (
-                      <tr key={p.id} style={{ ...styles.tr, opacity: isActive ? 1 : 0.5 }}>
-                        <td style={styles.td}>
-                          <div style={styles.playerNameCol}>
-                            <span style={{ fontWeight: isActive ? 700 : 400 }}>{getPlayerName(p)}</span>
-                            {!isActive && <span style={styles.eliminatedTag}>Eliminado</span>}
-                          </div>
-                        </td>
-                        <td style={styles.td}>
-                          {isActive ? (
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                              <select 
-                                value={p.table_number || ''} 
-                                onChange={(e) => handleMovePlayerTable(p.id, Number(e.target.value))}
-                                className="form-input"
-                                style={{ padding: '4px 8px', fontSize: '0.8rem', width: '90px', background: 'rgba(3,7,18,0.4)', margin: 0 }}
-                                disabled={tournament.status === 'completed'}
-                              >
-                                {Array.from({ length: Math.ceil(players.filter(pl => pl.status === 'active').length / tournament.max_players_per_table) }).map((_, i) => (
-                                  <option key={i+1} value={i+1}>Mesa {i+1}</option>
-                                ))}
-                              </select>
-                              <select 
-                                value={p.seat_number || ''} 
-                                onChange={(e) => handleMovePlayerSeat(p.id, Number(e.target.value))}
-                                className="form-input"
-                                style={{ padding: '4px 8px', fontSize: '0.8rem', width: '80px', background: 'rgba(3,7,18,0.4)', margin: 0 }}
-                                disabled={tournament.status === 'completed'}
-                              >
-                                {Array.from({ length: tournament.max_players_per_table }).map((_, i) => (
-                                  <option key={i+1} value={i+1}>Silla {i+1}</option>
-                                ))}
-                              </select>
-                            </div>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                        <td style={styles.td}>
-                          {p.rebuys_count}
-                        </td>
-                        <td style={styles.td}>
-                          {p.has_add_on ? (
-                            <span style={{ color: 'var(--color-primary)', fontWeight: 700 }}>SÍ</span>
-                          ) : (
-                            'NO'
-                          )}
-                        </td>
-                        <td style={{ ...styles.td, textAlign: 'right' }}>
-                          {isActive && tournament.status !== 'completed' ? (
-                            <div style={styles.actions}>
-                              <button 
-                                className="btn btn-outline" 
-                                style={styles.actionBtnSmall}
-                                onClick={() => handleAddPlayerAction(p, 'rebuy')}
-                                title="Registrar Recompra"
-                              >
-                                Recompra
-                              </button>
-                              {!p.has_add_on && (
-                                <button 
-                                  className="btn btn-outline" 
-                                  style={styles.actionBtnSmall}
-                                  onClick={() => handleAddPlayerAction(p, 'addon')}
-                                  title="Registrar Add-On"
-                                >
-                                  Add-On
-                                </button>
-                              )}
-                              <button 
-                                className="btn btn-danger" 
-                                style={{ ...styles.actionBtnSmall, color: 'white' }}
-                                onClick={() => handleAddPlayerAction(p, 'eliminate')}
-                                title="Eliminar"
-                              >
-                                Eliminar
-                              </button>
-                            </div>
-                          ) : p.status === 'eliminated' && tournament.status !== 'completed' ? (
-                            <div style={styles.actions}>
-                              <span style={styles.finishedLabel}>
-                                {p.elimination_position ? `${p.elimination_position}° Posición` : '-'}
-                              </span>
-                              <button 
-                                className="btn btn-outline" 
-                                style={{ ...styles.actionBtnSmall, color: '#818cf8', borderColor: '#818cf8' }}
-                                onClick={() => handleRestorePlayer(p)}
-                                title="Restituir jugador al torneo"
-                              >
-                                <RotateCcw size={12} /> Restituir
-                              </button>
-                            </div>
-                          ) : (
-                            <span style={styles.finishedLabel}>
-                              {p.elimination_position ? `${p.elimination_position}° Posición` : '-'}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
           )}
-        </div>
+        </section>
+
+        {/* Panel lateral */}
+        <aside style={{ flex: '1 1 340px', display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 }}>
+          {panelTab === 'tables' && selectedSeatPlayer && tournament.status !== 'completed' && (
+            <section aria-label="Jugador seleccionado" style={{ ...panel, border: `1px solid ${C.amber}`, display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ ...avatar(true), width: '44px', height: '44px', borderRadius: '22px' }}>{initials(selectedSeatPlayer)}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span style={{ fontSize: '18px', fontWeight: 700 }}>{getPlayerName(selectedSeatPlayer)}</span>
+                  <span style={{ fontSize: '13px', color: C.soft }}>
+                    Mesa {selectedSeatPlayer.table_number} · Silla {selectedSeatPlayer.seat_number} · {selectedSeatPlayer.rebuys_count} recompras · {selectedSeatPlayer.has_add_on ? 'con add-on' : 'sin add-on'}
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
+                <button type="button" style={{ ...smallBtn, minHeight: '48px' }} onClick={() => handleAddPlayerAction(selectedSeatPlayer, 'rebuy')}>+ Recompra</button>
+                <button type="button" style={{ ...smallBtn, minHeight: '48px', opacity: selectedSeatPlayer.has_add_on ? 0.5 : 1 }} disabled={selectedSeatPlayer.has_add_on} onClick={() => handleAddPlayerAction(selectedSeatPlayer, 'addon')}>+ Add-on</button>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: C.muted }}>
+                  Mesa
+                  <select value={selectedSeatPlayer.table_number || ''} onChange={(e) => handleMovePlayerTable(selectedSeatPlayer.id, Number(e.target.value))} style={selectStyle}>
+                    {Array.from({ length: Math.max(activeTableNumbers.length ? Math.max(...activeTableNumbers) : 1, Math.ceil(activePlayers.length / tournament.max_players_per_table)) }).map((_, i) => (
+                      <option key={i + 1} value={i + 1}>Mesa {i + 1}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: C.muted }}>
+                  Silla
+                  <select value={selectedSeatPlayer.seat_number || ''} onChange={(e) => handleMovePlayerSeat(selectedSeatPlayer.id, Number(e.target.value))} style={selectStyle}>
+                    {Array.from({ length: tournament.max_players_per_table }).map((_, i) => (
+                      <option key={i + 1} value={i + 1}>Silla {i + 1}</option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" style={{ ...smallBtn, minHeight: '48px', gridColumn: '1 / -1', background: 'transparent', color: '#FCA5A5', border: '1px solid #4A2530' }}
+                  onClick={() => { const p = selectedSeatPlayer; setSelectedSeatPlayerId(null); handleAddPlayerAction(p, 'eliminate'); }}>
+                  Eliminar…
+                </button>
+              </div>
+            </section>
+          )}
+
+          {balancingAlert && tournament.status !== 'completed' && (
+            <section aria-label="Balance de mesas" style={{ ...panel, border: `1px solid ${C.amber}`, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: 600 }}>
+                <ShieldAlert size={18} color={C.amber} /> Balance de mesas
+              </div>
+              <span style={{ fontSize: '14px', color: C.soft }}>{balancingAlert}</span>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {balancingAlert.includes('Unir Mesas') && (
+                  <button type="button" style={smallBtn} onClick={handleMergeTables}><Shuffle size={14} /> Unir mesas</button>
+                )}
+                {balancingAlert.includes('Desbalance') && (
+                  <button type="button" style={smallBtn} onClick={handleAutoBalance}><Shuffle size={14} /> Balancear</button>
+                )}
+              </div>
+            </section>
+          )}
+
+          <section aria-label="Resumen" style={{ ...panel, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '16px' }}>
+            <div style={statBox}><span style={statLabel}>Jugadores activos</span><span style={statValue}>{activePlayers.length} <span style={{ fontSize: '16px', color: C.muted }}>/ {players.length}</span></span></div>
+            <div style={statBox}>
+              <span style={statLabel}>Pila promedio</span>
+              <span style={statValue}>{money(avgStack)}</span>
+              {activeLevel && !activeLevel.is_break && activeLevel.big_blind > 0 && (
+                <span style={{ fontSize: '13px', color: C.soft }}>{Math.round(avgStack / activeLevel.big_blind)} ciegas grandes</span>
+              )}
+            </div>
+            <div style={statBox}><span style={statLabel}>Pozo a repartir</span><span style={{ ...statValue, color: C.gold }}>${money(prizePool)}</span></div>
+            <div style={statBox}><span style={statLabel}>Recompras · Add-ons</span><span style={statValue}>{totalRebuys} · {totalAddons}</span></div>
+            {tournament.rake_amount > 0 && (
+              <div style={{ ...statBox, gridColumn: '1 / -1' }}><span style={statLabel}>Rake de la fecha</span><span style={{ fontSize: '18px', fontWeight: 700 }}>${money(rakeTotal)}</span></div>
+            )}
+          </section>
+
+          <section aria-label="Premios" style={{ ...panel, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: C.soft }}>Premios</h3>
+            {payouts.map((amount, idx) => (
+              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px' }}>
+                <span>{idx + 1}° · {tournament.payout_structure[idx]}%</span>
+                <strong>${money(amount)}</strong>
+              </div>
+            ))}
+          </section>
+
+          <section aria-label="Historial reciente" style={{ ...panel, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: C.soft }}>Historial</h3>
+              <a href="#registro-actividad" style={{ fontSize: '13px', color: '#34D399' }}>Ver todo</a>
+            </div>
+            {logs.slice(0, 4).map((log) => (
+              <div key={log.id} style={{ display: 'flex', gap: '8px', fontSize: '14px', alignItems: 'baseline' }}>
+                <span style={{ color: C.muted, flex: 'none' }}>{new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                <span style={{ minWidth: 0 }}>{logText(log)}</span>
+              </div>
+            ))}
+            {logs.length === 0 && <span style={{ fontSize: '14px', color: C.muted }}>Sin actividad todavía.</span>}
+          </section>
+        </aside>
       </div>
 
       {/* Undo Toast */}
@@ -1866,7 +1823,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       )}
 
       {/* Activity Feed Section */}
-      <div className="glass-panel" style={styles.logsSection}>
+      <div id="registro-actividad" className="glass-panel" style={styles.logsSection}>
         <h3 style={styles.subTitle}>Registro de Actividad</h3>
         <div style={styles.logsContainer}>
           {logs.map((log) => (
@@ -2600,3 +2557,33 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 'auto',
   },
 };
+
+// --- Tokens y estilos de la vista rediseñada ---
+const C = {
+  bg: '#0A0F1C',
+  panel: '#111827',
+  raised: '#1A2236',
+  border: '#1F2A40',
+  borderStrong: '#2A3550',
+  text: '#E8ECF4',
+  soft: '#A9B2C6',
+  muted: '#8A94A8',
+  green: '#34D399',
+  greenDark: '#10B981',
+  gold: '#FCD34D',
+  amber: '#F59E0B',
+  danger: '#FCA5A5',
+};
+const panel: React.CSSProperties = { background: C.panel, border: `1px solid ${C.border}`, borderRadius: '16px', padding: '20px', boxSizing: 'border-box' };
+const ghostBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: '8px', color: C.soft, background: 'transparent', fontSize: '14px', fontWeight: 500, padding: '0 12px', border: `1px solid ${C.border}`, borderRadius: '10px', minHeight: '44px', cursor: 'pointer' };
+const secondaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: '8px', background: C.raised, color: C.text, border: `1px solid ${C.borderStrong}`, borderRadius: '10px', padding: '0 16px', minHeight: '44px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' };
+const smallBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', minHeight: '40px', padding: '0 12px', background: C.raised, color: C.text, border: `1px solid ${C.borderStrong}`, borderRadius: '9px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' };
+const menuItemBtn: React.CSSProperties = { textAlign: 'left', background: 'transparent', color: C.text, border: 0, borderRadius: '8px', padding: '10px 12px', fontSize: '14px', fontWeight: 500, cursor: 'pointer' };
+const selectStyle: React.CSSProperties = { minHeight: '40px', background: C.bg, color: C.text, border: `1px solid ${C.borderStrong}`, borderRadius: '9px', padding: '0 8px', fontSize: '13px' };
+const labelCaps: React.CSSProperties = { fontSize: '12px', color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' };
+const rowGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(180px, 2fr) 120px 90px 90px minmax(220px, 1.6fr)', gap: '12px' };
+const statBox: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '4px' };
+const statLabel: React.CSSProperties = { fontSize: '13px', color: C.muted };
+const statValue: React.CSSProperties = { fontSize: '28px', fontWeight: 700 };
+const roundBtn = (size: number): React.CSSProperties => ({ width: `${size}px`, height: `${size}px`, borderRadius: `${size / 2}px`, background: C.raised, border: `1px solid ${C.borderStrong}`, color: C.text, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' });
+const avatar = (selected: boolean): React.CSSProperties => ({ width: '36px', height: '36px', borderRadius: '18px', background: selected ? C.amber : '#1E3A34', color: selected ? '#111827' : '#6EE7B7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, flex: 'none' });
