@@ -56,7 +56,7 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
               </span>
               <span style={{ color: 'rgba(255,255,255,0.15)' }}>|</span>
               <span>
-                Código: <strong style={{ color: 'var(--color-primary)', fontFamily: 'monospace', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.85rem' }}>{user.email.split('@')[0].toUpperCase()}</strong>
+                Código: <strong style={{ color: 'var(--color-primary)', fontFamily: 'monospace', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.85rem' }}>{user.email.split('@')[0].toUpperCase().replace(/^LIGA-/, '')}</strong>
               </span>
             </span>
           ) : (
