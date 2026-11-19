@@ -88,10 +88,13 @@ export interface UiPrefs {
   theme: ThemeId;
   timerScale: number;  // 0.8 – 2.0
   blindsScale: number; // 0.8 – 2.0
+  layout: 'centrado' | 'clasico';
+  levelScale: number;  // 0.8 – 2.0
+  clockStyle: 'clasico' | 'digital' | 'paletas';
 }
 
 const PREFS_KEY = 'poker_control_ui_v1';
-export const DEFAULT_PREFS: UiPrefs = { theme: 'medianoche', timerScale: 1, blindsScale: 1 };
+export const DEFAULT_PREFS: UiPrefs = { theme: 'medianoche', timerScale: 1, blindsScale: 1, layout: 'centrado', levelScale: 1, clockStyle: 'clasico' };
 
 export const loadPrefs = (): UiPrefs => {
   try {
@@ -99,7 +102,7 @@ export const loadPrefs = (): UiPrefs => {
     if (!raw) return DEFAULT_PREFS;
     const p = JSON.parse(raw);
     const clamp = (n: unknown) => Math.min(2, Math.max(0.8, Number(n) || 1));
-    return { theme: getTheme(p.theme).id, timerScale: clamp(p.timerScale), blindsScale: clamp(p.blindsScale) };
+    return { theme: getTheme(p.theme).id, timerScale: clamp(p.timerScale), blindsScale: clamp(p.blindsScale), layout: p.layout === 'clasico' ? 'clasico' : 'centrado', levelScale: clamp(p.levelScale), clockStyle: ['digital', 'paletas'].includes(p.clockStyle) ? p.clockStyle : 'clasico' };
   } catch {
     return DEFAULT_PREFS;
   }

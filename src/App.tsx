@@ -65,7 +65,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="app-layout" style={styles.appLayout}>
+    <div className="app-layout" style={view === 'control' ? { ...styles.appLayout, ...styles.appLayoutWide } : styles.appLayout}>
       <Header currentView={view} onNavigate={handleNavigate} />
       
       <main style={styles.mainContent}>
@@ -136,6 +136,11 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '20px 4%',
     maxWidth: '1440px',
     margin: '0 auto',
+  },
+  // En el reloj se aprovecha todo el ancho de la tablet (sin márgenes grandes a los lados)
+  appLayoutWide: {
+    maxWidth: 'none',
+    padding: '12px 20px',
   },
   mainContent: {
     flexGrow: 1,

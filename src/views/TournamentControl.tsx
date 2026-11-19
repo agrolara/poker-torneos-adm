@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Tournament, TournamentPlayer, Level, BlindStructure, TournamentLog, Player } from '../types';
 import { Play, Pause, FastForward, Rewind, Award, ShieldAlert, ArrowLeft, Shuffle, Undo2, RotateCcw, AlertTriangle, Plus, Search, X, MoreHorizontal, Palette, Maximize, ChevronUp, ChevronDown } from 'lucide-react';
+import { ClockDisplay } from './ClockDisplay';
 import { C, THEMES, getTheme, themeVars, loadPrefs, savePrefs, DEFAULT_PREFS, type UiPrefs } from './controlThemes';
 
 interface TournamentControlProps {
@@ -1388,7 +1389,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
             <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700 }}>Apariencia</h3>
             <span style={{ display: 'flex', gap: '8px' }}>
-              <button type="button" style={smallBtn} onClick={() => updatePrefs({ timerScale: DEFAULT_PREFS.timerScale, blindsScale: DEFAULT_PREFS.blindsScale })}>Restablecer tamaños</button>
+              <button type="button" style={smallBtn} onClick={() => updatePrefs({ timerScale: DEFAULT_PREFS.timerScale, blindsScale: DEFAULT_PREFS.blindsScale, levelScale: DEFAULT_PREFS.levelScale })}>Restablecer tamaños</button>
               <button type="button" aria-label="Cerrar apariencia" style={{ ...smallBtn, width: '40px', padding: 0 }} onClick={() => setShowAppearance(false)}><X size={16} /></button>
             </span>
           </div>
@@ -1417,10 +1418,41 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
             })}
           </div>
 
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontSize: '14px', color: C.soft }}>Estilo de los números</span>
+            <div role="radiogroup" aria-label="Estilo de los números" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
+              {([['clasico', 'Clásico'], ['digital', 'Digital'], ['paletas', 'Paletas']] as const).map(([key, label]) => {
+                const sel = uiPrefs.clockStyle === key;
+                return (
+                  <button key={key} type="button" role="radio" aria-checked={sel} onClick={() => updatePrefs({ clockStyle: key })}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '14px 10px', borderRadius: '12px', cursor: 'pointer', background: C.bg, color: C.text, border: sel ? `2px solid ${theme.tokens.amber}` : `1px solid ${C.borderStrong}` }}>
+                    <span style={{ fontSize: '44px', fontWeight: 700, lineHeight: 1, height: '48px', display: 'flex', alignItems: 'center' }}>
+                      <ClockDisplay value="12:34" variant={key} litColor={theme.tokens.runningText} cardColor={theme.tokens.raised} cardLine={theme.tokens.bg} />
+                    </span>
+                    <span style={{ fontSize: '14px', fontWeight: sel ? 700 : 500 }}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontSize: '14px', color: C.soft }}>Diseño del reloj</span>
+            <div role="radiogroup" aria-label="Diseño del reloj" style={{ display: 'flex', gap: '4px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '4px', alignSelf: 'flex-start' }}>
+              {([['centrado', 'Centrado'], ['clasico', 'Tres columnas']] as const).map(([key, label]) => (
+                <button key={key} type="button" role="radio" aria-checked={uiPrefs.layout === key} onClick={() => updatePrefs({ layout: key })}
+                  style={{ minHeight: '40px', padding: '0 16px', borderRadius: '9px', border: 0, cursor: 'pointer', fontSize: '14px', fontWeight: uiPrefs.layout === key ? 600 : 500, background: uiPrefs.layout === key ? C.raised : 'transparent', color: uiPrefs.layout === key ? C.text : C.soft }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
             {([
               ['timerScale', 'Tamaño del reloj'],
               ['blindsScale', 'Tamaño de las ciegas'],
+              ['levelScale', 'Tamaño del nivel'],
             ] as const).map(([key, label]) => (
               <label key={key} style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px', color: C.soft }}>
                 <span style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1474,6 +1506,82 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
               )}
             </div>
           </div>
+        ) : uiPrefs.layout === 'centrado' ? (
+          <>
+            {/* Diseño centrado: reloj y ciegas juntos al medio, todo lo demás abajo */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: 600, color: isRunning ? C.runningText : C.muted }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '5px', background: isRunning ? C.green : C.muted }}></span>
+                {isRunning ? 'En juego' : 'En pausa'} · Etapa {currentLevelIdx + 1} de {levelsCount}
+              </span>
+              <span style={{ fontSize: '15px', color: C.soft, minWidth: '180px', textAlign: 'right' }}>
+                {nextBreakSeconds !== null && !activeLevel?.is_break ? <>Próximo descanso <strong style={{ color: C.text }}>en {formatLong(nextBreakSeconds)}</strong></> : ''}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+              <span style={{ fontSize: `calc(clamp(30px, 3.6vw, 56px) * ${uiPrefs.levelScale})`, fontWeight: 800, lineHeight: 1, letterSpacing: '0.08em', textTransform: 'uppercase', color: activeLevel?.is_break ? C.green : C.text, background: C.raised, border: `1px solid ${activeLevel?.is_break ? C.clockBorderRun : C.borderStrong}`, borderRadius: '14px', padding: '0.18em 0.6em', marginBottom: 'clamp(8px, 1.6vh, 20px)' }}>
+                {activeLevel?.is_break ? 'Descanso' : `Nivel ${activeLevel?.level || 1}`}
+              </span>
+              <span className="control-timer-display" style={{ display: 'flex', justifyContent: 'center', fontSize: `calc(clamp(110px, 15vw, 240px) * ${uiPrefs.timerScale})`, fontWeight: 700, lineHeight: 0.95, whiteSpace: 'nowrap', color: secondsRemaining <= 60 && isRunning ? C.timerWarn : C.text }}>
+                <ClockDisplay value={formatTime(secondsRemaining)} variant={uiPrefs.clockStyle} litColor={secondsRemaining <= 60 && isRunning ? theme.tokens.timerWarn : theme.tokens.runningText} cardColor={theme.tokens.raised} cardLine={theme.tokens.clockBg} />
+              </span>
+              {activeLevel?.is_break ? (
+                <span style={{ fontSize: `calc(clamp(40px, 5vw, 80px) * ${uiPrefs.blindsScale})`, fontWeight: 700, lineHeight: 1.05, color: C.green, marginTop: 'clamp(16px, 3vh, 40px)' }}>Descanso</span>
+              ) : (
+                <span style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '18px', flexWrap: 'wrap', marginTop: 'clamp(16px, 3vh, 40px)' }}>
+                  <span style={{ fontSize: `calc(clamp(40px, 5vw, 80px) * ${uiPrefs.blindsScale})`, fontWeight: 700, lineHeight: 1.05, whiteSpace: 'nowrap', color: C.gold }}>
+                    {money(activeLevel?.small_blind || 0)} / {money(activeLevel?.big_blind || 0)}
+                  </span>
+                  {(activeLevel?.ante || 0) > 0 && (
+                    <span style={{ fontSize: `calc(clamp(20px, 2vw, 30px) * ${Math.max(1, uiPrefs.blindsScale * 0.85)})`, color: C.soft, whiteSpace: 'nowrap' }}>Ante {money(activeLevel?.ante || 0)}</span>
+                  )}
+                </span>
+              )}
+              <div role="img" aria-label={`Progreso del nivel: ${Math.round(levelProgress * 100)} por ciento`} style={{ width: '100%', maxWidth: '760px', height: '10px', borderRadius: '5px', background: C.border, overflow: 'hidden', marginTop: '12px' }}>
+                <div style={{ width: `${Math.round(levelProgress * 100)}%`, height: '10px', background: C.green, borderRadius: '5px', transition: 'width 0.3s linear' }}></div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', alignItems: 'center', gap: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
+                <span style={{ fontSize: '14px', color: C.muted }}>Siguiente</span>
+                {nextLevel ? (
+                  nextLevel.is_break
+                    ? <span style={{ fontSize: 'clamp(22px, 2.4vw, 32px)', fontWeight: 700, color: C.green }}>Descanso · {nextLevel.duration} min</span>
+                    : <span style={{ fontSize: 'clamp(22px, 2.4vw, 32px)', fontWeight: 700, color: C.text, whiteSpace: 'nowrap' }}>
+                        {money(nextLevel.small_blind)} / {money(nextLevel.big_blind)}
+                        {(nextLevel.ante || 0) > 0 && <span style={{ fontSize: '16px', fontWeight: 500, color: C.soft }}> · ante {money(nextLevel.ante)}</span>}
+                      </span>
+                ) : <span style={{ fontSize: '20px', color: C.soft }}>Último nivel</span>}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
+                <button type="button" aria-label="Nivel anterior" title="Nivel Anterior" onClick={handleLevelDown} style={roundBtn(64)}>
+                  <Rewind size={24} />
+                </button>
+                <button type="button" aria-label={isRunning ? 'Pausar reloj' : 'Iniciar reloj'} title={isRunning ? 'Pausar' : 'Iniciar'} onClick={handlePlayPause}
+                  style={{ ...roundBtn(96), background: isRunning ? C.amber : C.green, border: 0, color: C.onAccent }}>
+                  {isRunning ? <Pause size={38} fill="currentColor" /> : <Play size={38} fill="currentColor" />}
+                </button>
+                <button type="button" aria-label="Siguiente nivel" title="Siguiente Nivel" onClick={handleLevelUp} style={roundBtn(64)}>
+                  <FastForward size={24} />
+                </button>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '28px', minWidth: 0, textAlign: 'right' }}>
+                <span style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '14px', color: C.muted }}>Jugadores</span>
+                  <span style={{ fontSize: 'clamp(22px, 2.4vw, 32px)', fontWeight: 700, color: C.text }}>{activePlayers.length}<span style={{ fontSize: '16px', color: C.muted }}> / {players.length}</span></span>
+                </span>
+                <span style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '14px', color: C.muted }}>Pila promedio</span>
+                  <span style={{ fontSize: 'clamp(22px, 2.4vw, 32px)', fontWeight: 700, color: C.text }}>
+                    {money(avgStack)}
+                    {activeLevel && !activeLevel.is_break && activeLevel.big_blind > 0 && <span style={{ fontSize: '16px', color: C.muted }}> · {Math.round(avgStack / activeLevel.big_blind)} BB</span>}
+                  </span>
+                </span>
+              </div>
+            </div>
+          </>
         ) : (
           <>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
@@ -1499,8 +1607,8 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 <span style={{ fontSize: 'clamp(32px, 3.6vw, 52px)', fontWeight: 800, lineHeight: 1, letterSpacing: '0.1em', textTransform: 'uppercase', color: activeLevel?.is_break ? C.green : C.text, background: activeLevel?.is_break ? 'rgba(52, 211, 153, 0.12)' : C.raised, border: `1px solid ${activeLevel?.is_break ? C.clockBorderRun : C.borderStrong}`, borderRadius: '14px', padding: '10px 28px' }}>
                   {activeLevel?.is_break ? 'Descanso' : `Nivel ${activeLevel?.level || 1}`}
                 </span>
-                <span className="control-timer-display" style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: `calc(clamp(88px, 11vw, 168px) * ${uiPrefs.timerScale})`, whiteSpace: 'nowrap', fontWeight: 700, lineHeight: 0.9, letterSpacing: '-0.04em', color: secondsRemaining <= 60 && isRunning ? C.timerWarn : C.text }}>
-                  {formatTime(secondsRemaining)}
+                <span className="control-timer-display" style={{ display: 'flex', justifyContent: 'center', fontSize: `calc(clamp(88px, 11vw, 168px) * ${uiPrefs.timerScale})`, whiteSpace: 'nowrap', fontWeight: 700, lineHeight: 0.9, color: secondsRemaining <= 60 && isRunning ? C.timerWarn : C.text }}>
+                  <ClockDisplay value={formatTime(secondsRemaining)} variant={uiPrefs.clockStyle} litColor={secondsRemaining <= 60 && isRunning ? theme.tokens.timerWarn : theme.tokens.runningText} cardColor={theme.tokens.raised} cardLine={theme.tokens.clockBg} />
                 </span>
                 <div role="img" aria-label={`Progreso del nivel: ${Math.round(levelProgress * 100)} por ciento`} style={{ width: '100%', maxWidth: '520px', height: '10px', borderRadius: '5px', background: C.border, overflow: 'hidden' }}>
                   <div style={{ width: `${Math.round(levelProgress * 100)}%`, height: '10px', background: C.green, borderRadius: '5px', transition: 'width 0.3s linear' }}></div>
