@@ -6,6 +6,8 @@ export type ThemeTokens = {
   bg: string; panel: string; raised: string; border: string; borderStrong: string;
   text: string; soft: string; muted: string;
   green: string; greenDark: string; gold: string; amber: string; danger: string;
+  // Color de acción: botón de iniciar, barra de progreso y botones principales
+  accent: string; accentStrong: string; onAccentBtn: string;
   clockBg: string; clockBorderRun: string; runningText: string; timerWarn: string;
   rowLine: string; avatarBg: string; avatarText: string;
   onAccent: string; onGreen: string; dangerBorder: string; link: string;
@@ -31,6 +33,7 @@ export const THEMES: ControlTheme[] = [
       bg: '#0A0F1C', panel: '#111827', raised: '#1A2236', border: '#1F2A40', borderStrong: '#2A3550',
       text: '#E8ECF4', soft: '#A9B2C6', muted: '#8A94A8',
       green: '#34D399', greenDark: '#10B981', gold: '#FCD34D', amber: '#F59E0B', danger: '#FCA5A5',
+      accent: '#34D399', accentStrong: '#10B981', onAccentBtn: '#062B1F',
       clockBg: '#0E1626', clockBorderRun: '#1F6B52', runningText: '#6EE7B7', timerWarn: '#FCA5A5',
       rowLine: '#172036', avatarBg: '#1E3A34', avatarText: '#6EE7B7',
       onAccent: '#111827', onGreen: '#062B1F', dangerBorder: '#4A2530', link: '#34D399',
@@ -45,6 +48,7 @@ export const THEMES: ControlTheme[] = [
       bg: '#130F0C', panel: '#1C1612', raised: '#2A211B', border: '#33281F', borderStrong: '#4A3A2C',
       text: '#F4ECE1', soft: '#CDBDA9', muted: '#A08E79',
       green: '#8CCFA6', greenDark: '#6DB88B', gold: '#E9C47E', amber: '#D9A44E', danger: '#F2A79D',
+      accent: '#DDB76C', accentStrong: '#C99A48', onAccentBtn: '#1A1208',
       clockBg: '#181210', clockBorderRun: '#7A5A33', runningText: '#E9C47E', timerWarn: '#F2A79D',
       rowLine: '#2A211B', avatarBg: '#3A2A1F', avatarText: '#E9C47E',
       onAccent: '#1A1208', onGreen: '#0E2418', dangerBorder: '#5C2B26', link: '#E9C47E',
@@ -59,6 +63,7 @@ export const THEMES: ControlTheme[] = [
       bg: '#0B0D10', panel: '#14171C', raised: '#1D2128', border: '#262B33', borderStrong: '#363D48',
       text: '#F2F5F8', soft: '#AFB7C3', muted: '#87909D',
       green: '#3DDC97', greenDark: '#22C47E', gold: '#8BD8FF', amber: '#FFB547', danger: '#FF9E9E',
+      accent: '#4CC3FF', accentStrong: '#22A8F0', onAccentBtn: '#04131F',
       clockBg: '#0F1216', clockBorderRun: '#1E6E9C', runningText: '#8BD8FF', timerWarn: '#FF9E9E',
       rowLine: '#1D2128', avatarBg: '#10324A', avatarText: '#8BD8FF',
       onAccent: '#0B0D10', onGreen: '#052615', dangerBorder: '#4A2228', link: '#8BD8FF',

@@ -926,7 +926,7 @@ const styles: Record<string, React.CSSProperties> = {
 const d: Record<string, React.CSSProperties> = {
   card: { background: C.panel, border: `1px solid ${C.border}`, borderRadius: '18px', padding: '22px', boxSizing: 'border-box' },
   h2: { margin: 0, fontSize: '18px', fontWeight: 700, color: C.text },
-  primaryBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '10px', background: C.green, color: C.onAccent, border: 0, borderRadius: '14px', fontWeight: 700, cursor: 'pointer' },
+  primaryBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '10px', background: C.accent, color: C.onAccentBtn, border: 0, borderRadius: '14px', fontWeight: 700, cursor: 'pointer' },
   secondaryBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', minHeight: '48px', padding: '0 18px', background: C.raised, color: C.text, border: `1px solid ${C.borderStrong}`, borderRadius: '12px', fontSize: '15px', fontWeight: 600, cursor: 'pointer' },
   linkBtn: { display: 'inline-flex', alignItems: 'center', gap: '4px', minHeight: '40px', background: 'transparent', border: 0, color: C.link, fontSize: '14px', fontWeight: 600, cursor: 'pointer', padding: '0 4px' },
   empty: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '12px 0', fontSize: '15px', color: C.soft },
