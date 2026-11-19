@@ -1461,7 +1461,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 </span>
                 <input type="range" min={80} max={200} step={10} value={Math.round(uiPrefs[key] * 100)}
                   onChange={(e) => updatePrefs({ [key]: Number(e.target.value) / 100 } as Partial<UiPrefs>)}
-                  style={{ width: '100%', accentColor: theme.tokens.amber, minHeight: '32px' }} />
+                  style={{ width: '100%', accentColor: theme.tokens.accent, minHeight: '32px' }} />
               </label>
             ))}
           </div>
@@ -1520,14 +1520,14 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-              <span style={{ fontSize: `calc(clamp(30px, 3.6vw, 56px) * ${uiPrefs.levelScale})`, fontWeight: 800, lineHeight: 1, letterSpacing: '0.08em', textTransform: 'uppercase', color: activeLevel?.is_break ? C.green : C.text, background: C.raised, border: `1px solid ${activeLevel?.is_break ? C.clockBorderRun : C.borderStrong}`, borderRadius: '14px', padding: '0.18em 0.6em', marginBottom: 'clamp(8px, 1.6vh, 20px)' }}>
+              <span style={{ fontSize: `calc(clamp(30px, 3.6vw, 56px) * ${uiPrefs.levelScale})`, fontWeight: 800, lineHeight: 1, letterSpacing: '0.08em', textTransform: 'uppercase', color: activeLevel?.is_break ? C.accent : C.text, background: C.raised, border: `1px solid ${activeLevel?.is_break ? C.clockBorderRun : C.borderStrong}`, borderRadius: '14px', padding: '0.18em 0.6em', marginBottom: 'clamp(8px, 1.6vh, 20px)' }}>
                 {activeLevel?.is_break ? 'Descanso' : `Nivel ${activeLevel?.level || 1}`}
               </span>
               <span className="control-timer-display" style={{ display: 'flex', justifyContent: 'center', fontSize: `calc(clamp(110px, 15vw, 240px) * ${uiPrefs.timerScale})`, fontWeight: 700, lineHeight: 0.95, whiteSpace: 'nowrap', color: secondsRemaining <= 60 && isRunning ? C.timerWarn : C.text }}>
                 <ClockDisplay value={formatTime(secondsRemaining)} variant={uiPrefs.clockStyle} litColor={secondsRemaining <= 60 && isRunning ? theme.tokens.timerWarn : theme.tokens.runningText} cardColor={theme.tokens.raised} cardLine={theme.tokens.clockBg} />
               </span>
               {activeLevel?.is_break ? (
-                <span style={{ fontSize: `calc(clamp(40px, 5vw, 80px) * ${uiPrefs.blindsScale})`, fontWeight: 700, lineHeight: 1.05, color: C.green, marginTop: 'clamp(16px, 3vh, 40px)' }}>Descanso</span>
+                <span style={{ fontSize: `calc(clamp(40px, 5vw, 80px) * ${uiPrefs.blindsScale})`, fontWeight: 700, lineHeight: 1.05, color: C.accent, marginTop: 'clamp(16px, 3vh, 40px)' }}>Descanso</span>
               ) : (
                 <span style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '18px', flexWrap: 'wrap', marginTop: 'clamp(16px, 3vh, 40px)' }}>
                   <span style={{ fontSize: `calc(clamp(40px, 5vw, 80px) * ${uiPrefs.blindsScale})`, fontWeight: 700, lineHeight: 1.05, whiteSpace: 'nowrap', color: C.gold }}>
@@ -1539,7 +1539,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 </span>
               )}
               <div role="img" aria-label={`Progreso del nivel: ${Math.round(levelProgress * 100)} por ciento`} style={{ width: '100%', maxWidth: '760px', height: '10px', borderRadius: '5px', background: C.border, overflow: 'hidden', marginTop: '12px' }}>
-                <div style={{ width: `${Math.round(levelProgress * 100)}%`, height: '10px', background: C.green, borderRadius: '5px', transition: 'width 0.3s linear' }}></div>
+                <div style={{ width: `${Math.round(levelProgress * 100)}%`, height: '10px', background: C.accent, borderRadius: '5px', transition: 'width 0.3s linear' }}></div>
               </div>
             </div>
 
@@ -1548,7 +1548,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 <span style={{ fontSize: '14px', color: C.muted }}>Siguiente</span>
                 {nextLevel ? (
                   nextLevel.is_break
-                    ? <span style={{ fontSize: 'clamp(22px, 2.4vw, 32px)', fontWeight: 700, color: C.green }}>Descanso · {nextLevel.duration} min</span>
+                    ? <span style={{ fontSize: 'clamp(22px, 2.4vw, 32px)', fontWeight: 700, color: C.accent }}>Descanso · {nextLevel.duration} min</span>
                     : <span style={{ fontSize: 'clamp(22px, 2.4vw, 32px)', fontWeight: 700, color: C.text, whiteSpace: 'nowrap' }}>
                         {money(nextLevel.small_blind)} / {money(nextLevel.big_blind)}
                         {(nextLevel.ante || 0) > 0 && <span style={{ fontSize: '16px', fontWeight: 500, color: C.soft }}> · ante {money(nextLevel.ante)}</span>}
@@ -1560,7 +1560,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                   <Rewind size={24} />
                 </button>
                 <button type="button" aria-label={isRunning ? 'Pausar reloj' : 'Iniciar reloj'} title={isRunning ? 'Pausar' : 'Iniciar'} onClick={handlePlayPause}
-                  style={{ ...roundBtn(96), background: isRunning ? C.amber : C.green, border: 0, color: C.onAccent }}>
+                  style={{ ...roundBtn(96), background: isRunning ? C.amber : C.accent, border: 0, color: C.onAccentBtn }}>
                   {isRunning ? <Pause size={38} fill="currentColor" /> : <Play size={38} fill="currentColor" />}
                 </button>
                 <button type="button" aria-label="Siguiente nivel" title="Siguiente Nivel" onClick={handleLevelUp} style={roundBtn(64)}>
@@ -1597,21 +1597,21 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: `1 1 ${Math.round(200 * uiPrefs.blindsScale)}px`, minWidth: 0 }}>
                 <span style={labelCaps}>{activeLevel?.is_break ? 'Descanso' : 'Ciegas'}</span>
-                <span style={{ fontSize: `calc(clamp(30px, 3.4vw, 54px) * ${uiPrefs.blindsScale})`, fontWeight: 700, lineHeight: 1, whiteSpace: 'nowrap', color: activeLevel?.is_break ? C.green : C.gold }}>
+                <span style={{ fontSize: `calc(clamp(30px, 3.4vw, 54px) * ${uiPrefs.blindsScale})`, fontWeight: 700, lineHeight: 1, whiteSpace: 'nowrap', color: activeLevel?.is_break ? C.accent : C.gold }}>
                   {activeLevel?.is_break ? 'BREAK' : `${money(activeLevel?.small_blind || 0)} / ${money(activeLevel?.big_blind || 0)}`}
                 </span>
                 {!activeLevel?.is_break && <span style={{ fontSize: `calc(16px * ${Math.max(1, uiPrefs.blindsScale * 0.85)})`, color: C.soft }}>Ante {money(activeLevel?.ante || 0)}</span>}
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', flex: `2 1 ${Math.round(320 * uiPrefs.timerScale)}px`, minWidth: 0 }}>
-                <span style={{ fontSize: 'clamp(32px, 3.6vw, 52px)', fontWeight: 800, lineHeight: 1, letterSpacing: '0.1em', textTransform: 'uppercase', color: activeLevel?.is_break ? C.green : C.text, background: activeLevel?.is_break ? 'rgba(52, 211, 153, 0.12)' : C.raised, border: `1px solid ${activeLevel?.is_break ? C.clockBorderRun : C.borderStrong}`, borderRadius: '14px', padding: '10px 28px' }}>
+                <span style={{ fontSize: 'clamp(32px, 3.6vw, 52px)', fontWeight: 800, lineHeight: 1, letterSpacing: '0.1em', textTransform: 'uppercase', color: activeLevel?.is_break ? C.accent : C.text, background: C.raised, border: `1px solid ${activeLevel?.is_break ? C.clockBorderRun : C.borderStrong}`, borderRadius: '14px', padding: '10px 28px' }}>
                   {activeLevel?.is_break ? 'Descanso' : `Nivel ${activeLevel?.level || 1}`}
                 </span>
                 <span className="control-timer-display" style={{ display: 'flex', justifyContent: 'center', fontSize: `calc(clamp(88px, 11vw, 168px) * ${uiPrefs.timerScale})`, whiteSpace: 'nowrap', fontWeight: 700, lineHeight: 0.9, color: secondsRemaining <= 60 && isRunning ? C.timerWarn : C.text }}>
                   <ClockDisplay value={formatTime(secondsRemaining)} variant={uiPrefs.clockStyle} litColor={secondsRemaining <= 60 && isRunning ? theme.tokens.timerWarn : theme.tokens.runningText} cardColor={theme.tokens.raised} cardLine={theme.tokens.clockBg} />
                 </span>
                 <div role="img" aria-label={`Progreso del nivel: ${Math.round(levelProgress * 100)} por ciento`} style={{ width: '100%', maxWidth: '520px', height: '10px', borderRadius: '5px', background: C.border, overflow: 'hidden' }}>
-                  <div style={{ width: `${Math.round(levelProgress * 100)}%`, height: '10px', background: C.green, borderRadius: '5px', transition: 'width 0.3s linear' }}></div>
+                  <div style={{ width: `${Math.round(levelProgress * 100)}%`, height: '10px', background: C.accent, borderRadius: '5px', transition: 'width 0.3s linear' }}></div>
                 </div>
               </div>
 
@@ -1619,7 +1619,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 <span style={labelCaps}>Siguiente nivel</span>
                 {nextLevel ? (
                   nextLevel.is_break ? (
-                    <span style={{ fontSize: 'clamp(28px, 3vw, 40px)', fontWeight: 700, lineHeight: 1, color: C.green }}>Descanso · {nextLevel.duration} min</span>
+                    <span style={{ fontSize: 'clamp(28px, 3vw, 40px)', fontWeight: 700, lineHeight: 1, color: C.accent }}>Descanso · {nextLevel.duration} min</span>
                   ) : (
                     <>
                       <span style={{ fontSize: 'clamp(24px, 2.6vw, 40px)', fontWeight: 700, lineHeight: 1, whiteSpace: 'nowrap' }}>{money(nextLevel.small_blind)} / {money(nextLevel.big_blind)}</span>
@@ -1637,7 +1637,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 <Rewind size={22} />
               </button>
               <button type="button" aria-label={isRunning ? 'Pausar reloj' : 'Iniciar reloj'} title={isRunning ? 'Pausar' : 'Iniciar'} onClick={handlePlayPause}
-                style={{ ...roundBtn(88), background: isRunning ? C.amber : C.green, border: 0, color: C.onAccent }}>
+                style={{ ...roundBtn(88), background: isRunning ? C.amber : C.accent, border: 0, color: C.onAccentBtn }}>
                 {isRunning ? <Pause size={34} fill="currentColor" /> : <Play size={34} fill="currentColor" />}
               </button>
               <button type="button" aria-label="Siguiente nivel" title="Siguiente Nivel" onClick={handleLevelUp} style={roundBtn(60)}>
@@ -1678,7 +1678,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 </button>
               )}
               {tournament.status !== 'completed' && (
-                <button type="button" onClick={openLateRegistrationModal} style={{ ...secondaryBtn, background: C.greenDark, color: C.onGreen, border: 0, fontWeight: 700 }}>
+                <button type="button" onClick={openLateRegistrationModal} style={{ ...secondaryBtn, background: C.accentStrong, color: C.onAccentBtn, border: 0, fontWeight: 700 }}>
                   <Plus size={16} /> Registro tardío
                 </button>
               )}
