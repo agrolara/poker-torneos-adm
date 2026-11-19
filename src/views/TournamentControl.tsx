@@ -50,6 +50,32 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     return () => { document.body.style.backgroundColor = prev; };
   }, [theme.tokens.bg]);
 
+  // Pantalla siempre encendida mientras el reloj corre (la tablet no se apaga en medio de un nivel)
+  useEffect(() => {
+    const keepAwake = isRunning && tournament.status !== 'completed';
+    if (!keepAwake || !('wakeLock' in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let cancelled = false;
+    const request = async () => {
+      try {
+        const l = await navigator.wakeLock.request('screen');
+        if (cancelled) { l.release(); return; }
+        lock = l;
+      } catch (e) {
+        console.error('No se pudo mantener la pantalla encendida:', e);
+      }
+    };
+    // Android suelta el bloqueo al minimizar la app: se pide de nuevo al volver
+    const onVisible = () => { if (document.visibilityState === 'visible') request(); };
+    request();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      lock?.release().catch(() => {});
+    };
+  }, [isRunning, tournament.status]);
+
   // Finalizar manual: orden de llegada de los jugadores que siguen en juego
   const [finishModal, setFinishModal] = useState<{ show: boolean; order: string[] }>({ show: false, order: [] });
   const busyRef = useRef(false); // evita doble click en eliminar / finalizar
