@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Tournament, TournamentPlayer, Level, BlindStructure, TournamentLog, Player } from '../types';
-import { Play, Pause, FastForward, Rewind, Award, ShieldAlert, Tv, ArrowLeft, Shuffle, Undo2, RotateCcw, AlertTriangle, Plus, Search, X, MoreHorizontal } from 'lucide-react';
+import { Play, Pause, FastForward, Rewind, Award, ShieldAlert, ArrowLeft, Shuffle, Undo2, RotateCcw, AlertTriangle, Plus, Search, X, MoreHorizontal, Palette, Maximize, ChevronUp, ChevronDown } from 'lucide-react';
+import { C, THEMES, getTheme, themeVars, loadPrefs, savePrefs, DEFAULT_PREFS, type UiPrefs } from './controlThemes';
 
 interface TournamentControlProps {
   tournament: Tournament;
@@ -30,6 +31,29 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   const [selectedSeatPlayerId, setSelectedSeatPlayerId] = useState<string | null>(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
+  // Apariencia (tema + tamaños) guardada en este dispositivo
+  const [uiPrefs, setUiPrefs] = useState<UiPrefs>(() => loadPrefs());
+  const [showAppearance, setShowAppearance] = useState(false);
+  const updatePrefs = (patch: Partial<UiPrefs>) => {
+    setUiPrefs(prev => {
+      const next = { ...prev, ...patch };
+      savePrefs(next);
+      return next;
+    });
+  };
+  const theme = getTheme(uiPrefs.theme);
+
+  // El fondo de toda la página acompaña al tema mientras se está en el centro de control
+  useEffect(() => {
+    const prev = document.body.style.backgroundColor;
+    document.body.style.backgroundColor = theme.tokens.bg;
+    return () => { document.body.style.backgroundColor = prev; };
+  }, [theme.tokens.bg]);
+
+  // Finalizar manual: orden de llegada de los jugadores que siguen en juego
+  const [finishModal, setFinishModal] = useState<{ show: boolean; order: string[] }>({ show: false, order: [] });
+  const busyRef = useRef(false); // evita doble click en eliminar / finalizar
+
   const [currentLevelIdx, setCurrentLevelIdx] = useState(initialTournament.current_level_index);
   
   // Seating balancing recommendation
@@ -44,7 +68,6 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
   undoToastRef.current = undoToast;
   
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const realtimeChannelRef = useRef<any>(null);
   const lastWarnedMinuteLevelRef = useRef<number>(-1);
   const isFirstLoadRef = useRef(true);
@@ -144,23 +167,9 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       fetchTournamentData();
     });
 
-    // Initialize Sync channel (local tabs)
-    broadcastChannelRef.current = new BroadcastChannel('poker_tournament_sync');
-    
-    // Listen for requests from newly opened TV screens locally
-    broadcastChannelRef.current.onmessage = (event) => {
-      if (event.data && event.data.type === 'REQUEST_STATE') {
-        broadcastState();
-      }
-    };
-
     // Supabase Realtime subscription for cross-device sync and broadcast channel
     const channel = supabase
-      .channel('timer_sync', {
-        config: {
-          broadcast: { self: false }
-        }
-      })
+      .channel(`timer_sync_${initialTournament.id}`)
       .on(
         'postgres_changes',
         {
@@ -194,17 +203,12 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           setCurrentLevelIdx(newData.current_level_index);
         }
       )
-      .on('broadcast', { event: 'REQUEST_STATE' }, () => {
-        // Someone requested state globally, broadcast it
-        broadcastState();
-      })
       .subscribe();
     
     realtimeChannelRef.current = channel;
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      if (broadcastChannelRef.current) broadcastChannelRef.current.close();
       if (realtimeChannelRef.current) {
         supabase.removeChannel(realtimeChannelRef.current);
       }
@@ -294,18 +298,10 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           .select('*')
           .eq('id', tData.structure_id)
           .single();
-        if (sData) {
-          setStructure(sData);
-        }
+        setStructure(sData || null);
       } else {
-        // Fallback to the first available structure if not set
-        const { data: structures } = await supabase
-          .from('blind_structures')
-          .select('*')
-          .limit(1);
-        if (structures && structures.length > 0) {
-          setStructure(structures[0]);
-        }
+        // Sin estructura asignada: no se usa otra por defecto (antes tomaba la primera que encontrara)
+        setStructure(null);
       }
 
       // Fetch logs
@@ -324,64 +320,11 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       console.error(err);
     } finally {
       setLoading(false);
-      // Initial broadcast
-      setTimeout(() => broadcastState(), 500);
     }
   };
 
 
 
-  const broadcastState = () => {
-    const activeLevel = getCurrentLevel();
-    const nextLevel = getNextLevel();
-    const activeCount = players.filter(p => p.status === 'active').length;
-
-    const { prizePool, payouts } = calculateFinancials();
-
-    const statePayload = {
-      tournament_name: tournament.name,
-      status: tournament.status,
-      seconds_remaining: dbSecondsRemainingRef.current,
-      is_timer_running: dbIsTimerRunningRef.current,
-      timer_reference_at: dbTimerReferenceAtRef.current,
-      current_level_index: currentLevelIdx,
-      small_blind: activeLevel?.small_blind || 0,
-      big_blind: activeLevel?.big_blind || 0,
-      ante: activeLevel?.ante || 0,
-      next_small_blind: nextLevel?.small_blind || 0,
-      next_big_blind: nextLevel?.big_blind || 0,
-      next_ante: nextLevel?.ante || 0,
-      active_players: activeCount,
-      total_players: players.length,
-      average_stack: calculateAverageStack(activeCount),
-      prize_pool: prizePool,
-      payouts: payouts,
-      is_break: activeLevel?.is_break || false,
-      duration_minutes: activeLevel?.duration || 0,
-      level_label: activeLevel?.is_break ? 'DESCANSO' : `NIVEL ${activeLevel?.level || 1}`,
-      tournament_id: tournament.id
-    };
-
-    // 1. Local tabs sync
-    broadcastChannelRef.current?.postMessage({
-      type: 'STATE_UPDATE',
-      payload: statePayload
-    });
-
-    // 2. Global cross-device sync via WebSockets
-    realtimeChannelRef.current?.send({
-      type: 'broadcast',
-      event: 'STATE_UPDATE',
-      payload: statePayload
-    });
-  };
-
-  // Sync Broadcast state whenever relevant values change (exclude secondsRemaining to avoid per-second traffic)
-  useEffect(() => {
-    if (!loading) {
-      broadcastState();
-    }
-  }, [isRunning, currentLevelIdx, players, tournament]);
 
   const saveTimerStateToDb = async (overrides: Partial<Tournament> = {}) => {
     try {
@@ -398,26 +341,13 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
         .from('tournaments')
         .update(payload)
         .eq('id', tournament.id);
-
-      // On transitions, writes the state (including timer_reference_at fetched from get_server_time RPC or calculated high-precision server time) to DB,
-      // and broadcasts the state change over channel `timer_sync`, event `STATE_CHANGE`.
-      realtimeChannelRef.current?.send({
-        type: 'broadcast',
-        event: 'STATE_CHANGE',
-        payload: {
-          seconds_remaining: payload.seconds_remaining,
-          is_timer_running: payload.is_timer_running,
-          current_level_index: payload.current_level_index,
-          timer_reference_at: payload.timer_reference_at,
-          tournament_id: tournament.id
-        }
-      });
     } catch (e) {
       console.error('Error saving timer state:', e);
     }
   };
 
   const handlePlayPause = () => {
+    if (!structureRef.current || tournament.status === 'completed') return;
     const nextRunning = !isRunning;
     const nowServer = new Date(Date.now() + clockOffsetRef.current).toISOString();
     const currentDerived = secondsRemainingRef.current;
@@ -545,12 +475,17 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
 
   const speakAnnounce = (txt: string) => {
     playAlarmSound();
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(txt);
-      utterance.lang = 'es-MX';
-      utterance.rate = 0.95;
-      window.speechSynthesis.speak(utterance);
+    // La voz es un extra: si el navegador no la soporta, nunca debe cortar la acción (eliminar, cerrar, etc.)
+    try {
+      if ('speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined') {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(txt);
+        utterance.lang = 'es-MX';
+        utterance.rate = 0.95;
+        window.speechSynthesis.speak(utterance);
+      }
+    } catch (e) {
+      console.error('Anuncio por voz no disponible:', e);
     }
   };
 
@@ -585,7 +520,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           .eq('id', player.id);
         
         if (error) throw error;
-        addLog('rebuy', { player_name: getPlayerName(player), count: newCount });
+        addLog('rebuy', { player_name: getPlayerName(player), count: newCount, tournament_player_id: player.id });
 
         // Undo toast for rebuy
         const prevCount = player.rebuys_count;
@@ -601,7 +536,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           .eq('id', player.id);
         
         if (error) throw error;
-        addLog('addon', { player_name: getPlayerName(player) });
+        addLog('addon', { player_name: getPlayerName(player), tournament_player_id: player.id });
 
         // Undo toast for addon
         showUndoToast(`Add-On registrado para ${getPlayerName(player)}`, async () => {
@@ -618,49 +553,149 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     }
   };
 
+  // --- Helpers de posiciones y cierre (siempre con datos frescos de la BD) ---
+  const fetchFreshPlayers = async (): Promise<TournamentPlayer[]> => {
+    const { data, error } = await supabase
+      .from('tournament_players')
+      .select('*, player:players(name)')
+      .eq('tournament_id', tournament.id);
+    if (error) throw error;
+    return data || [];
+  };
+
+  // Renumera a los eliminados según su orden de caída: el primero en caer queda último.
+  // Así no hay posiciones repetidas aunque se restituya a alguien o se haga doble click.
+  // lastOutId = el que acaba de caer (va al final del orden).
+  const renumberEliminated = async (list: TournamentPlayer[], lastOutId?: string): Promise<Record<string, number>> => {
+    const total = list.length;
+    const elim = list.filter(p => p.status === 'eliminated').sort((a, b) => {
+      if (a.id === lastOutId) return 1;
+      if (b.id === lastOutId) return -1;
+      return (b.elimination_position ?? 0) - (a.elimination_position ?? 0);
+    });
+    const result: Record<string, number> = {};
+    for (let i = 0; i < elim.length; i++) {
+      const pos = total - i;
+      result[elim[i].id] = pos;
+      if (elim[i].elimination_position !== pos) {
+        const { error } = await supabase.from('tournament_players').update({ elimination_position: pos }).eq('id', elim[i].id);
+        if (error) throw error;
+        elim[i].elimination_position = pos;
+      }
+    }
+    return result;
+  };
+
+  // Cierra el torneo: posiciones finales de los que siguen en juego (finalOrder: 1° primero)
+  // y premios para TODOS los lugares pagados (antes solo el ganador quedaba con payout_amount).
+  const settleAndComplete = async (list: TournamentPlayer[], finalOrder: string[]) => {
+    for (let i = 0; i < finalOrder.length; i++) {
+      const p = list.find(x => x.id === finalOrder[i]);
+      if (!p) continue;
+      const patch: Partial<TournamentPlayer> = { elimination_position: i + 1 };
+      if (i > 0) patch.status = 'eliminated';
+      const { error } = await supabase.from('tournament_players').update(patch).eq('id', p.id);
+      if (error) throw error;
+      Object.assign(p, patch);
+    }
+
+    const { payouts } = computeFinancials(list, tournament);
+    for (const p of list) {
+      const amount = p.elimination_position && p.elimination_position <= payouts.length ? payouts[p.elimination_position - 1] : 0;
+      if (Number(p.payout_amount || 0) !== amount) {
+        const { error } = await supabase.from('tournament_players').update({ payout_amount: amount }).eq('id', p.id);
+        if (error) throw error;
+      }
+    }
+
+    const nowServer = new Date(Date.now() + clockOffsetRef.current).toISOString();
+    dbIsTimerRunningRef.current = false;
+    dbSecondsRemainingRef.current = secondsRemainingRef.current;
+    dbTimerReferenceAtRef.current = nowServer;
+    setIsRunning(false);
+    await supabase
+      .from('tournaments')
+      .update({ status: 'completed', is_timer_running: false, seconds_remaining: secondsRemainingRef.current, timer_reference_at: nowServer })
+      .eq('id', tournament.id);
+    setTournament(prev => ({ ...prev, status: 'completed', is_timer_running: false }));
+
+    const winner = list.find(x => x.id === finalOrder[0]);
+    if (winner) {
+      speakAnnounce(`¡Felicidades a ${getPlayerName(winner)} por ganar el torneo!`);
+      addLog('timer_action', { message: `Torneo completado. Ganador: ${getPlayerName(winner)}`, tournament_player_id: winner.id });
+    }
+  };
+
+  // Reabre un torneo cerrado (solo se usa al deshacer la eliminación que lo cerró)
+  const reopenTournament = async () => {
+    await supabase.from('tournament_players').update({ payout_amount: 0 }).eq('tournament_id', tournament.id);
+    await supabase.from('tournament_players').update({ elimination_position: null }).eq('tournament_id', tournament.id).eq('status', 'active');
+    await supabase.from('tournaments').update({ status: 'running', is_timer_running: false }).eq('id', tournament.id);
+    setTournament(prev => ({ ...prev, status: 'running', is_timer_running: false }));
+    addLog('correction', { message: 'Torneo reabierto para corregir la última eliminación' });
+  };
+
+  const undoElimination = async (playerId: string, name: string, prevTable: number | null, prevSeat: number | null) => {
+    const { data: tData } = await supabase.from('tournaments').select('status').eq('id', tournament.id).single();
+    if (tData?.status === 'completed') {
+      if (!window.confirm('Esta eliminación cerró el torneo. ¿Reabrirlo y deshacerla?')) return;
+      await reopenTournament();
+    }
+    await supabase.from('tournament_players').update({
+      status: 'active',
+      elimination_position: null,
+      payout_amount: 0,
+      table_number: prevTable,
+      seat_number: prevSeat
+    }).eq('id', playerId);
+    await renumberEliminated(await fetchFreshPlayers());
+    addLog('correction', { message: `Eliminación de ${name} fue deshecha. Restituido a Mesa ${prevTable} / Silla ${prevSeat}`, tournament_player_id: playerId });
+    fetchTournamentData();
+  };
+
   const handleConfirmElimination = async () => {
-    if (tournament.status === 'completed') return;
+    if (tournament.status === 'completed' || busyRef.current) return;
     const player = confirmModal.player;
     if (!player) return;
     setConfirmModal({ show: false, player: null, action: '' });
+    busyRef.current = true;
 
     try {
-      const activeCount = players.filter(p => p.status === 'active').length;
-      const prevTable = player.table_number;
-      const prevSeat = player.seat_number;
+      const list = await fetchFreshPlayers();
+      const target = list.find(p => p.id === player.id);
+      // Ya estaba eliminado (doble click u otro dispositivo): no hacer nada
+      if (!target || target.status !== 'active') { fetchTournamentData(); return; }
+
+      const name = getPlayerName(target);
+      const prevTable = target.table_number;
+      const prevSeat = target.seat_number;
 
       const { error } = await supabase
         .from('tournament_players')
-        .update({ 
-          status: 'eliminated',
-          elimination_position: activeCount
-        })
-        .eq('id', player.id);
-      
+        .update({ status: 'eliminated' })
+        .eq('id', player.id)
+        .eq('status', 'active');
       if (error) throw error;
-      
-      speakAnnounce(`${getPlayerName(player)} ha sido eliminado en la posición ${activeCount}`);
-      addLog('elimination', { player_name: getPlayerName(player), position: activeCount });
+      target.status = 'eliminated';
 
-      // Undo toast for elimination
-      showUndoToast(`${getPlayerName(player)} eliminado en posición #${activeCount}`, async () => {
-        await supabase.from('tournament_players').update({ 
-          status: 'active', 
-          elimination_position: null,
-          table_number: prevTable,
-          seat_number: prevSeat
-        }).eq('id', player.id);
-        addLog('correction', { message: `Eliminación de ${getPlayerName(player)} fue deshecha. Restituido a Mesa ${prevTable} / Silla ${prevSeat}` });
-        fetchTournamentData();
-      });
+      const positions = await renumberEliminated(list, player.id);
+      const position = positions[player.id];
 
-      if (activeCount === 2) {
-        handleCompleteTournament(player.id);
+      speakAnnounce(`${name} ha sido eliminado en la posición ${position}`);
+      addLog('elimination', { player_name: name, position, tournament_player_id: player.id });
+
+      const stillActive = list.filter(p => p.status === 'active');
+      if (stillActive.length === 1) {
+        await settleAndComplete(list, [stillActive[0].id]);
       }
-      
+
+      showUndoToast(`${name} eliminado en posición #${position}`, () => undoElimination(player.id, name, prevTable, prevSeat));
       fetchTournamentData();
     } catch (e) {
       console.error(e);
+      alert('No se pudo registrar la eliminación. Revisa la conexión e intenta de nuevo.');
+    } finally {
+      busyRef.current = false;
     }
   };
 
@@ -698,7 +733,8 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       
       if (error) throw error;
 
-      addLog('correction', { message: `${getPlayerName(player)} fue restituido al torneo (Mesa ${targetTable} / Silla ${emptySeat})` });
+      await renumberEliminated(await fetchFreshPlayers());
+      addLog('correction', { message: `${getPlayerName(player)} fue restituido al torneo (Mesa ${targetTable} / Silla ${emptySeat})`, tournament_player_id: player.id });
       speakAnnounce(`${getPlayerName(player)} ha sido restituido al torneo`);
       fetchTournamentData();
     } catch (e) {
@@ -710,25 +746,37 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     const playerName = log.payload?.player_name;
     if (!playerName && !log.payload?.message) return;
 
+    // Busca por id del jugador en el torneo; los registros antiguos (sin id) solo si el nombre es único
+    const findLogPlayer = (status?: 'eliminated'): TournamentPlayer | null => {
+      const id = log.payload?.tournament_player_id;
+      if (id) return players.find(p => p.id === id && (!status || p.status === status)) || null;
+      const matches = players.filter(p => getPlayerName(p) === playerName && (!status || p.status === status));
+      if (matches.length > 1) {
+        alert(`Hay más de un jugador llamado "${playerName}". Corrígelo desde la lista de jugadores.`);
+        return null;
+      }
+      return matches[0] || null;
+    };
+
     try {
       if (log.event_type === 'elimination') {
         // Find the eliminated player by name
-        const player = players.find(p => getPlayerName(p) === playerName && p.status === 'eliminated');
+        const player = findLogPlayer('eliminated');
         if (!player) { alert(`No se encontró al jugador eliminado "${playerName}".`); return; }
         await handleRestorePlayer(player);
       } else if (log.event_type === 'rebuy') {
-        const player = players.find(p => getPlayerName(p) === playerName);
+        const player = findLogPlayer();
         if (!player) { alert(`No se encontró al jugador "${playerName}".`); return; }
         if (player.rebuys_count <= 0) { alert('Este jugador no tiene recompras para revertir.'); return; }
         await supabase.from('tournament_players').update({ rebuys_count: player.rebuys_count - 1 }).eq('id', player.id);
-        addLog('correction', { message: `Recompra #${log.payload.count} de ${playerName} revertida desde el historial` });
+        addLog('correction', { message: `Recompra #${log.payload.count} de ${playerName} revertida desde el historial`, tournament_player_id: player.id });
         fetchTournamentData();
       } else if (log.event_type === 'addon') {
-        const player = players.find(p => getPlayerName(p) === playerName);
+        const player = findLogPlayer();
         if (!player) { alert(`No se encontró al jugador "${playerName}".`); return; }
         if (!player.has_add_on) { alert('Este jugador ya no tiene add-on registrado.'); return; }
         await supabase.from('tournament_players').update({ has_add_on: false }).eq('id', player.id);
-        addLog('correction', { message: `Add-On de ${playerName} revertido desde el historial` });
+        addLog('correction', { message: `Add-On de ${playerName} revertido desde el historial`, tournament_player_id: player.id });
         fetchTournamentData();
       } else if (log.event_type === 'balancing') {
         // Balancing logs contain a message like "Mesa balanceada: Se movió a PLAYER de Mesa X a Mesa Y (Silla Z)"
@@ -736,45 +784,6 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
       }
     } catch (e) {
       console.error('Error reverting log:', e);
-    }
-  };
-
-  const handleCompleteTournament = async (lastEliminatedId: string) => {
-    // Find the winner (the last active player who wasn't eliminated)
-    const activeList = players.filter(p => p.status === 'active' && p.id !== lastEliminatedId);
-    const winner = activeList[0];
-    
-    try {
-      setIsRunning(false);
-      
-      // Update winner profile row
-      if (winner) {
-        const { payouts } = calculateFinancials();
-        const winAmount = payouts[0] || 0;
-        
-        await supabase
-          .from('tournament_players')
-          .update({ 
-            elimination_position: 1,
-            payout_amount: winAmount
-          })
-          .eq('id', winner.id);
-
-        speakAnnounce(`¡Felicidades a ${getPlayerName(winner)} por ganar el torneo!`);
-        addLog('timer_action', { message: `Torneo completado. Ganador: ${getPlayerName(winner)}` });
-      }
-
-      await supabase
-        .from('tournaments')
-        .update({ 
-          status: 'completed',
-          is_timer_running: false 
-        })
-        .eq('id', tournament.id);
-
-      fetchTournamentData();
-    } catch (e) {
-      console.error(e);
     }
   };
 
@@ -950,10 +959,6 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     } catch (e) {
       console.error('Error merging tables:', e);
     }
-  };
-
-  const handleOpenTV = () => {
-    window.open(`?tv=true&id=${tournament.id}`, '_blank', 'width=1000,height=700,menubar=no,toolbar=no,location=no');
   };
 
   const handleMovePlayerTable = async (playerTournamentId: string, newTable: number) => {
@@ -1164,22 +1169,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     return p.guest_name || p.player?.name || 'Jugador Invitado';
   };
 
-  const calculateFinancials = () => {
-    const buyInsCount = players.length;
-    const rebuysCount = players.reduce((acc, p) => acc + p.rebuys_count, 0);
-    const addOnsCount = players.filter(p => p.has_add_on).length;
-
-    const rakeTotal = buyInsCount * (tournament.rake_amount || 0);
-
-    const prizePool = 
-      (buyInsCount * (tournament.buy_in_amount - (tournament.rake_amount || 0))) +
-      (rebuysCount * tournament.rebuy_amount) +
-      (addOnsCount * tournament.add_on_amount);
-
-    const payouts = tournament.payout_structure.map(pct => Math.round((prizePool * pct) / 100));
-
-    return { prizePool, payouts, buyInsCount, rebuysCount, addOnsCount, rakeTotal };
-  };
+  const calculateFinancials = () => computeFinancials(players, tournament);
 
   const calculateAverageStack = (activeCount: number) => {
     if (activeCount === 0) return 0;
@@ -1195,22 +1185,52 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     return Math.round(totalChips / activeCount);
   };
 
-  const handleManualCompleteTournament = async () => {
-    if (!window.confirm('¿Estás seguro de que deseas finalizar este torneo manualmente?')) return;
+  const handleManualCompleteTournament = () => {
+    const active = players
+      .filter(p => p.status === 'active')
+      .sort((a, b) => (a.table_number || 0) - (b.table_number || 0) || (a.seat_number || 0) - (b.seat_number || 0));
+    if (active.length === 0) return;
+    // Siempre se confirma el orden final (con 1 jugador es solo confirmar al ganador)
+    setFinishModal({ show: true, order: active.map(p => p.id) });
+  };
+
+  const moveFinishOrder = (idx: number, dir: -1 | 1) => {
+    setFinishModal(prev => {
+      const order = [...prev.order];
+      const j = idx + dir;
+      if (j < 0 || j >= order.length) return prev;
+      [order[idx], order[j]] = [order[j], order[idx]];
+      return { ...prev, order };
+    });
+  };
+
+  const confirmManualFinish = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    const order = finishModal.order;
+    setFinishModal({ show: false, order: [] });
     try {
-      setIsRunning(false);
-      await supabase
-        .from('tournaments')
-        .update({ 
-          status: 'completed', 
-          is_timer_running: false 
-        })
-        .eq('id', tournament.id);
-      
+      const list = await fetchFreshPlayers();
+      // Por si alguien cambió de estado mientras el modal estaba abierto
+      const validOrder = order.filter(id => list.some(p => p.id === id && p.status === 'active'));
+      await renumberEliminated(list);
+      await settleAndComplete(list, validOrder);
       addLog('timer_action', { message: 'Torneo finalizado manualmente por el organizador.' });
-      onBack();
+      fetchTournamentData();
     } catch (err) {
       console.error('Error completing tournament:', err);
+      alert('No se pudo finalizar el torneo. Intenta de nuevo.');
+    } finally {
+      busyRef.current = false;
+    }
+  };
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen?.();
+    } catch (e) {
+      console.error('Pantalla completa no disponible:', e);
     }
   };
 
@@ -1291,11 +1311,11 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
     .sort((a, b) => (a.elimination_position || 99) - (b.elimination_position || 99));
 
   if (loading && !structure) {
-    return <div style={styles.loadingContainer}>Cargando centro de control del torneo...</div>;
+    return <div style={{ ...themeVars(theme), ...styles.loadingContainer }}>Cargando centro de control del torneo...</div>;
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', color: C.text }}>
+    <div style={{ ...themeVars(theme), display: 'flex', flexDirection: 'column', gap: '16px', color: C.text }}>
       {/* Header */}
       <header style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
@@ -1310,14 +1330,20 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', position: 'relative' }}>
-          <button type="button" onClick={handleOpenTV} style={secondaryBtn}>
-            <Tv size={18} /> Abrir pantalla TV
-          </button>
           <button type="button" aria-label="Más opciones del torneo" onClick={() => setShowMoreMenu(v => !v)} style={{ ...ghostBtn, width: '44px', justifyContent: 'center', padding: 0 }}>
             <MoreHorizontal size={18} />
           </button>
           {showMoreMenu && (
             <div style={{ position: 'absolute', right: 0, top: '52px', zIndex: 20, background: C.panel, border: `1px solid ${C.borderStrong}`, borderRadius: '12px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '220px', boxShadow: '0 12px 30px rgba(0,0,0,0.4)' }}>
+              <button type="button" style={menuItemBtn} onClick={() => { setShowMoreMenu(false); setShowAppearance(v => !v); }}>
+                <Palette size={15} style={{ verticalAlign: '-2px', marginRight: '8px' }} />Apariencia
+              </button>
+              {typeof document !== 'undefined' && !!document.documentElement.requestFullscreen && (
+                <button type="button" style={menuItemBtn} onClick={() => { setShowMoreMenu(false); toggleFullscreen(); }}>
+                  <Maximize size={15} style={{ verticalAlign: '-2px', marginRight: '8px' }} />Pantalla completa
+                </button>
+              )}
+              <div style={{ height: '1px', background: C.border, margin: '2px 4px' }}></div>
               {tournament.status !== 'completed' && (
                 <button type="button" style={menuItemBtn} onClick={() => { setShowMoreMenu(false); handleManualCompleteTournament(); }}>
                   Finalizar torneo
@@ -1331,9 +1357,68 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
         </div>
       </header>
 
+      {showAppearance && (
+        <section aria-label="Apariencia" style={{ ...panel, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+            <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700 }}>Apariencia</h3>
+            <span style={{ display: 'flex', gap: '8px' }}>
+              <button type="button" style={smallBtn} onClick={() => updatePrefs({ timerScale: DEFAULT_PREFS.timerScale, blindsScale: DEFAULT_PREFS.blindsScale })}>Restablecer tamaños</button>
+              <button type="button" aria-label="Cerrar apariencia" style={{ ...smallBtn, width: '40px', padding: 0 }} onClick={() => setShowAppearance(false)}><X size={16} /></button>
+            </span>
+          </div>
+
+          <div role="radiogroup" aria-label="Tema" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+            {THEMES.map(t => {
+              const sel = t.id === uiPrefs.theme;
+              return (
+                <button key={t.id} type="button" role="radio" aria-checked={sel} onClick={() => updatePrefs({ theme: t.id })}
+                  style={{ display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left', padding: '12px', borderRadius: '14px', cursor: 'pointer', background: t.tokens.panel, color: t.tokens.text, border: sel ? `2px solid ${t.tokens.amber}` : `1px solid ${t.tokens.borderStrong}` }}>
+                  <span style={{ display: 'block', height: '84px', borderRadius: '10px', background: t.tokens.bg, padding: '10px', boxSizing: 'border-box' }}>
+                    <span style={{ display: 'flex', height: '100%', borderRadius: '40px', background: t.tokens.rail, padding: '6px', boxSizing: 'border-box' }}>
+                      <span style={{ flex: 1, borderRadius: '34px', background: t.tokens.felt, border: `1px solid ${t.tokens.feltLine}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '15px', fontWeight: 700, color: t.tokens.gold }}>50/100</span>
+                        <span style={{ fontSize: '15px', fontWeight: 700, color: t.tokens.feltText, fontFamily: "'JetBrains Mono', ui-monospace, monospace" }}>12:00</span>
+                      </span>
+                    </span>
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <span style={{ fontSize: '15px', fontWeight: 700 }}>{t.name}</span>
+                    {sel && <span style={{ fontSize: '12px', fontWeight: 700, color: t.tokens.onAccent, background: t.tokens.amber, borderRadius: '999px', padding: '2px 10px' }}>En uso</span>}
+                  </span>
+                  <span style={{ fontSize: '13px', color: t.tokens.soft, lineHeight: 1.4 }}>{t.description}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
+            {([
+              ['timerScale', 'Tamaño del reloj'],
+              ['blindsScale', 'Tamaño de las ciegas'],
+            ] as const).map(([key, label]) => (
+              <label key={key} style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px', color: C.soft }}>
+                <span style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{label}</span>
+                  <strong style={{ color: C.text }}>{Math.round(uiPrefs[key] * 100)}%</strong>
+                </span>
+                <input type="range" min={80} max={200} step={10} value={Math.round(uiPrefs[key] * 100)}
+                  onChange={(e) => updatePrefs({ [key]: Number(e.target.value) / 100 } as Partial<UiPrefs>)}
+                  style={{ width: '100%', accentColor: theme.tokens.amber, minHeight: '32px' }} />
+              </label>
+            ))}
+          </div>
+          <span style={{ fontSize: '13px', color: C.muted }}>Se guarda en este dispositivo.</span>
+        </section>
+      )}
+
       {/* Reloj protagonista */}
-      <section aria-label="Reloj del torneo" style={{ background: '#0E1626', border: `1px solid ${isRunning ? '#1F6B52' : C.border}`, borderRadius: '20px', padding: '28px 32px 24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        {tournament.status === 'completed' ? (
+      <section aria-label="Reloj del torneo" style={{ background: C.clockBg, border: `1px solid ${isRunning ? C.clockBorderRun : C.border}`, borderRadius: '20px', padding: '28px 32px 24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {!structure && tournament.status !== 'completed' ? (
+          <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '24px 8px', fontSize: '16px', color: C.soft }}>
+            <AlertTriangle size={22} color={theme.tokens.amber} />
+            Este torneo no tiene una estructura de ciegas asignada, así que el reloj no puede partir. Crea el torneo de nuevo eligiendo una estructura.
+          </div>
+        ) : tournament.status === 'completed' ? (
           <div style={styles.completedHeaderCard}>
             <div style={styles.completedBadge}><Award size={20} color="#f59e0b" /> TORNEO CONCLUIDO</div>
             <div style={styles.podiumContainer}>
@@ -1366,7 +1451,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
         ) : (
           <>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: isRunning ? '#6EE7B7' : C.muted }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', fontSize: '15px', fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: isRunning ? C.runningText : C.muted }}>
                 <span style={{ width: '10px', height: '10px', borderRadius: '5px', background: isRunning ? C.green : C.muted }}></span>
                 {isRunning ? 'En juego' : 'En pausa'} · Etapa {currentLevelIdx + 1} de {levelsCount}
               </span>
@@ -1376,19 +1461,19 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: '1 1 200px', minWidth: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: `1 1 ${Math.round(200 * uiPrefs.blindsScale)}px`, minWidth: 0 }}>
                 <span style={labelCaps}>{activeLevel?.is_break ? 'Descanso' : 'Ciegas'}</span>
-                <span style={{ fontSize: 'clamp(30px, 3.4vw, 54px)', fontWeight: 700, lineHeight: 1, whiteSpace: 'nowrap', color: activeLevel?.is_break ? C.green : C.gold }}>
+                <span style={{ fontSize: `calc(clamp(30px, 3.4vw, 54px) * ${uiPrefs.blindsScale})`, fontWeight: 700, lineHeight: 1, whiteSpace: 'nowrap', color: activeLevel?.is_break ? C.green : C.gold }}>
                   {activeLevel?.is_break ? 'BREAK' : `${money(activeLevel?.small_blind || 0)} / ${money(activeLevel?.big_blind || 0)}`}
                 </span>
-                {!activeLevel?.is_break && <span style={{ fontSize: '16px', color: C.soft }}>Ante {money(activeLevel?.ante || 0)}</span>}
+                {!activeLevel?.is_break && <span style={{ fontSize: `calc(16px * ${Math.max(1, uiPrefs.blindsScale * 0.85)})`, color: C.soft }}>Ante {money(activeLevel?.ante || 0)}</span>}
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', flex: '2 1 320px', minWidth: 0 }}>
-                <span style={{ fontSize: 'clamp(32px, 3.6vw, 52px)', fontWeight: 800, lineHeight: 1, letterSpacing: '0.1em', textTransform: 'uppercase', color: activeLevel?.is_break ? C.green : C.text, background: activeLevel?.is_break ? 'rgba(52, 211, 153, 0.12)' : C.raised, border: `1px solid ${activeLevel?.is_break ? '#1F6B52' : C.borderStrong}`, borderRadius: '14px', padding: '10px 28px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', flex: `2 1 ${Math.round(320 * uiPrefs.timerScale)}px`, minWidth: 0 }}>
+                <span style={{ fontSize: 'clamp(32px, 3.6vw, 52px)', fontWeight: 800, lineHeight: 1, letterSpacing: '0.1em', textTransform: 'uppercase', color: activeLevel?.is_break ? C.green : C.text, background: activeLevel?.is_break ? 'rgba(52, 211, 153, 0.12)' : C.raised, border: `1px solid ${activeLevel?.is_break ? C.clockBorderRun : C.borderStrong}`, borderRadius: '14px', padding: '10px 28px' }}>
                   {activeLevel?.is_break ? 'Descanso' : `Nivel ${activeLevel?.level || 1}`}
                 </span>
-                <span className="control-timer-display" style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 'clamp(88px, 11vw, 168px)', fontWeight: 700, lineHeight: 0.9, letterSpacing: '-0.04em', color: secondsRemaining <= 60 && isRunning ? '#FCA5A5' : C.text }}>
+                <span className="control-timer-display" style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: `calc(clamp(88px, 11vw, 168px) * ${uiPrefs.timerScale})`, whiteSpace: 'nowrap', fontWeight: 700, lineHeight: 0.9, letterSpacing: '-0.04em', color: secondsRemaining <= 60 && isRunning ? C.timerWarn : C.text }}>
                   {formatTime(secondsRemaining)}
                 </span>
                 <div role="img" aria-label={`Progreso del nivel: ${Math.round(levelProgress * 100)} por ciento`} style={{ width: '100%', maxWidth: '520px', height: '10px', borderRadius: '5px', background: C.border, overflow: 'hidden' }}>
@@ -1418,7 +1503,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 <Rewind size={22} />
               </button>
               <button type="button" aria-label={isRunning ? 'Pausar reloj' : 'Iniciar reloj'} title={isRunning ? 'Pausar' : 'Iniciar'} onClick={handlePlayPause}
-                style={{ ...roundBtn(88), background: isRunning ? C.amber : C.green, border: 0, color: '#111827' }}>
+                style={{ ...roundBtn(88), background: isRunning ? C.amber : C.green, border: 0, color: C.onAccent }}>
                 {isRunning ? <Pause size={34} fill="currentColor" /> : <Play size={34} fill="currentColor" />}
               </button>
               <button type="button" aria-label="Siguiente nivel" title="Siguiente Nivel" onClick={handleLevelUp} style={roundBtn(60)}>
@@ -1459,7 +1544,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                 </button>
               )}
               {tournament.status !== 'completed' && (
-                <button type="button" onClick={openLateRegistrationModal} style={{ ...secondaryBtn, background: C.greenDark, color: '#062B1F', border: 0, fontWeight: 700 }}>
+                <button type="button" onClick={openLateRegistrationModal} style={{ ...secondaryBtn, background: C.greenDark, color: C.onGreen, border: 0, fontWeight: 700 }}>
                   <Plus size={16} /> Registro tardío
                 </button>
               )}
@@ -1473,7 +1558,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                   <span style={labelCaps}>Jugador</span><span style={labelCaps}>Mesa · Silla</span><span style={labelCaps}>Recompras</span><span style={labelCaps}>Add-on</span><span style={{ ...labelCaps, textAlign: 'right' }}>Acciones</span>
                 </div>
                 {filteredActive.map((p) => (
-                  <div key={p.id} style={{ ...rowGrid, alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid #172036' }}>
+                  <div key={p.id} style={{ ...rowGrid, alignItems: 'center', padding: '10px 12px', borderBottom: `1px solid ${C.rowLine}` }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                       <span style={avatar(false)}>{initials(p)}</span>
                       <span style={{ fontSize: '16px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getPlayerName(p)}</span>
@@ -1489,7 +1574,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                             <button type="button" style={smallBtn} title="Registrar Add-On" onClick={() => handleAddPlayerAction(p, 'addon')}>+ Add-on</button>
                           )}
                           <button type="button" aria-label={`Eliminar a ${getPlayerName(p)}`} title="Eliminar" onClick={() => handleAddPlayerAction(p, 'eliminate')}
-                            style={{ width: '40px', height: '40px', background: 'transparent', color: '#FCA5A5', border: '1px solid #4A2530', borderRadius: '9px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                            style={{ width: '40px', height: '40px', background: 'transparent', color: C.danger, border: `1px solid ${C.dangerBorder}`, borderRadius: '9px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                             <X size={16} />
                           </button>
                         </>
@@ -1509,7 +1594,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           {panelTab === 'eliminated' && (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {filteredEliminated.map((p) => (
-                <div key={p.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', justifyContent: 'space-between', padding: '10px 12px', borderBottom: '1px solid #172036' }}>
+                <div key={p.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', justifyContent: 'space-between', padding: '10px 12px', borderBottom: `1px solid ${C.rowLine}` }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <span style={{ minWidth: '44px', fontSize: '18px', fontWeight: 700, color: C.gold }}>{p.elimination_position ? `${p.elimination_position}°` : '-'}</span>
                     <span style={{ fontSize: '16px', fontWeight: 600 }}>{getPlayerName(p)}</span>
@@ -1544,11 +1629,11 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                     </div>
                     <div style={{ overflowX: 'auto' }}>
                       <div style={{ position: 'relative', width: '900px', height: '540px', margin: '0 auto' }}>
-                        <div style={{ position: 'absolute', left: '120px', top: '110px', width: '660px', height: '320px', borderRadius: '160px', background: '#1C2638', boxSizing: 'border-box', padding: '16px', boxShadow: `inset 0 0 0 2px ${C.borderStrong}` }}>
-                          <div style={{ width: '100%', height: '100%', borderRadius: '144px', background: '#0F3B2E', boxSizing: 'border-box', border: '2px solid #1F6B52', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', textAlign: 'center', padding: '0 24px' }}>
-                            <span style={{ fontSize: '13px', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#8FD9BC' }}>Poker Director</span>
-                            <span style={{ fontSize: '52px', fontWeight: 700, letterSpacing: '0.08em', color: '#CFF5E5', lineHeight: 1 }}>MESA {tableNum}</span>
-                            <span style={{ fontSize: '14px', color: '#8FD9BC', maxWidth: '420px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tournament.name}</span>
+                        <div style={{ position: 'absolute', left: '120px', top: '110px', width: '660px', height: '320px', borderRadius: '160px', background: C.rail, boxSizing: 'border-box', padding: '16px', boxShadow: `inset 0 0 0 2px ${C.borderStrong}` }}>
+                          <div style={{ width: '100%', height: '100%', borderRadius: '144px', background: C.felt, boxSizing: 'border-box', border: `2px solid ${C.feltLine}`, boxShadow: 'inset 0 0 60px rgba(0,0,0,0.35)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', textAlign: 'center', padding: '0 24px' }}>
+                            <span style={{ fontSize: '13px', letterSpacing: '0.18em', textTransform: 'uppercase', color: C.feltSub }}>Poker Director</span>
+                            <span style={{ fontSize: '52px', fontWeight: 700, letterSpacing: '0.08em', color: C.feltText, lineHeight: 1 }}>MESA {tableNum}</span>
+                            <span style={{ fontSize: '14px', color: C.feltSub, maxWidth: '420px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tournament.name}</span>
                           </div>
                         </div>
                         {playersAtTable.map((player, i) => {
@@ -1565,7 +1650,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                               <span style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
                                 <span style={{ ...avatar(isSel), width: '40px', height: '40px', borderRadius: '20px', fontSize: '14px' }}>{initials(player)}</span>
                                 <span style={{ flex: 1, minWidth: 0, fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getPlayerName(player)}</span>
-                                <span style={{ width: '26px', height: '26px', borderRadius: '13px', background: C.amber, color: '#111827', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, flex: 'none' }}>{player.seat_number ?? '-'}</span>
+                                <span style={{ width: '26px', height: '26px', borderRadius: '13px', background: C.amber, color: C.onAccent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, flex: 'none' }}>{player.seat_number ?? '-'}</span>
                               </span>
                               <span style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: C.soft, borderTop: `1px solid ${C.border}`, paddingTop: '6px', width: '100%' }}>
                                 <span>Recompras <strong style={{ color: C.text }}>{player.rebuys_count}</strong></span>
@@ -1618,7 +1703,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
                     ))}
                   </select>
                 </label>
-                <button type="button" style={{ ...smallBtn, minHeight: '48px', gridColumn: '1 / -1', background: 'transparent', color: '#FCA5A5', border: '1px solid #4A2530' }}
+                <button type="button" style={{ ...smallBtn, minHeight: '48px', gridColumn: '1 / -1', background: 'transparent', color: C.danger, border: `1px solid ${C.dangerBorder}` }}
                   onClick={() => { const p = selectedSeatPlayer; setSelectedSeatPlayerId(null); handleAddPlayerAction(p, 'eliminate'); }}>
                   Eliminar…
                 </button>
@@ -1672,7 +1757,7 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
           <section aria-label="Historial reciente" style={{ ...panel, display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: C.soft }}>Historial</h3>
-              <a href="#registro-actividad" style={{ fontSize: '13px', color: '#34D399' }}>Ver todo</a>
+              <a href="#registro-actividad" style={{ fontSize: '13px', color: C.link }}>Ver todo</a>
             </div>
             {logs.slice(0, 4).map((log) => (
               <div key={log.id} style={{ display: 'flex', gap: '8px', fontSize: '14px', alignItems: 'baseline' }}>
@@ -1748,6 +1833,44 @@ export const TournamentControl: React.FC<TournamentControlProps> = ({ tournament
             <p style={{ margin: '8px 0 0', color: 'var(--color-text-muted)', fontSize: '0.75rem', textAlign: 'center' }}>
               Podrás deshacer esta acción durante 15 segundos después de confirmar.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Finalizar torneo manualmente: orden final */}
+      {finishModal.show && (
+        <div style={styles.modalOverlay} onClick={() => setFinishModal({ show: false, order: [] })}>
+          <div style={{ ...styles.confirmModal, textAlign: 'left' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 6px', fontSize: '1.15rem', color: '#ffffff' }}>Finalizar torneo</h3>
+            <p style={{ margin: '0 0 16px', color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>
+              {finishModal.order.length > 1
+                ? 'Ordena a los jugadores que siguen en juego según cómo terminan. El primero de la lista es el ganador; los premios se reparten con este orden.'
+                : 'Queda un solo jugador en juego: será el ganador.'}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+              {finishModal.order.map((id, idx) => {
+                const p = players.find(x => x.id === id);
+                if (!p) return null;
+                const { payouts: pays } = calculateFinancials();
+                return (
+                  <div key={id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '10px', background: 'rgba(255,255,255,0.04)' }}>
+                    <span style={{ minWidth: '32px', fontWeight: 700, color: 'var(--color-secondary)' }}>{idx + 1}°</span>
+                    <span style={{ flex: 1, minWidth: 0, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getPlayerName(p)}</span>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>{pays[idx] ? `$${money(pays[idx])}` : ''}</span>
+                    {finishModal.order.length > 1 && (
+                      <>
+                        <button type="button" aria-label={`Subir a ${getPlayerName(p)}`} disabled={idx === 0} onClick={() => moveFinishOrder(idx, -1)} style={{ ...orderBtn, opacity: idx === 0 ? 0.35 : 1 }}><ChevronUp size={18} /></button>
+                        <button type="button" aria-label={`Bajar a ${getPlayerName(p)}`} disabled={idx === finishModal.order.length - 1} onClick={() => moveFinishOrder(idx, 1)} style={{ ...orderBtn, opacity: idx === finishModal.order.length - 1 ? 0.35 : 1 }}><ChevronDown size={18} /></button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={styles.confirmButtons}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setFinishModal({ show: false, order: [] })}>Cancelar</button>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={confirmManualFinish}>Finalizar torneo</button>
+            </div>
           </div>
         </div>
       )}
@@ -2566,27 +2689,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-// --- Tokens y estilos de la vista rediseñada ---
-const C = {
-  bg: '#0A0F1C',
-  panel: '#111827',
-  raised: '#1A2236',
-  border: '#1F2A40',
-  borderStrong: '#2A3550',
-  text: '#E8ECF4',
-  soft: '#A9B2C6',
-  muted: '#8A94A8',
-  green: '#34D399',
-  greenDark: '#10B981',
-  gold: '#FCD34D',
-  amber: '#F59E0B',
-  danger: '#FCA5A5',
-};
+// --- Estilos de la vista rediseñada (colores vía tema: ver controlThemes.ts) ---
 const panel: React.CSSProperties = { background: C.panel, border: `1px solid ${C.border}`, borderRadius: '16px', padding: '20px', boxSizing: 'border-box' };
 const ghostBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: '8px', color: C.soft, background: 'transparent', fontSize: '14px', fontWeight: 500, padding: '0 12px', border: `1px solid ${C.border}`, borderRadius: '10px', minHeight: '44px', cursor: 'pointer' };
 const secondaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: '8px', background: C.raised, color: C.text, border: `1px solid ${C.borderStrong}`, borderRadius: '10px', padding: '0 16px', minHeight: '44px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' };
 const smallBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', minHeight: '40px', padding: '0 12px', background: C.raised, color: C.text, border: `1px solid ${C.borderStrong}`, borderRadius: '9px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' };
 const menuItemBtn: React.CSSProperties = { textAlign: 'left', background: 'transparent', color: C.text, border: 0, borderRadius: '8px', padding: '10px 12px', fontSize: '14px', fontWeight: 500, cursor: 'pointer' };
+const orderBtn: React.CSSProperties = { width: '40px', height: '40px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: 'inherit', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '9px', cursor: 'pointer' };
 const selectStyle: React.CSSProperties = { minHeight: '40px', background: C.bg, color: C.text, border: `1px solid ${C.borderStrong}`, borderRadius: '9px', padding: '0 8px', fontSize: '13px' };
 const labelCaps: React.CSSProperties = { fontSize: '12px', color: C.muted, letterSpacing: '0.08em', textTransform: 'uppercase' };
 const rowGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(180px, 2fr) 120px 90px 90px minmax(220px, 1.6fr)', gap: '12px' };
@@ -2594,4 +2703,18 @@ const statBox: React.CSSProperties = { display: 'flex', flexDirection: 'column',
 const statLabel: React.CSSProperties = { fontSize: '13px', color: C.muted };
 const statValue: React.CSSProperties = { fontSize: '28px', fontWeight: 700 };
 const roundBtn = (size: number): React.CSSProperties => ({ width: `${size}px`, height: `${size}px`, borderRadius: `${size / 2}px`, background: C.raised, border: `1px solid ${C.borderStrong}`, color: C.text, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' });
-const avatar = (selected: boolean): React.CSSProperties => ({ width: '36px', height: '36px', borderRadius: '18px', background: selected ? C.amber : '#1E3A34', color: selected ? '#111827' : '#6EE7B7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, flex: 'none' });
+const avatar = (selected: boolean): React.CSSProperties => ({ width: '36px', height: '36px', borderRadius: '18px', background: selected ? C.amber : C.avatarBg, color: selected ? C.onAccent : C.avatarText, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, flex: 'none' });
+
+// Pozo y premios a partir de una lista de jugadores (pura: sirve con el estado o con datos frescos de la BD)
+const computeFinancials = (list: TournamentPlayer[], t: Tournament) => {
+  const buyInsCount = list.length;
+  const rebuysCount = list.reduce((acc, p) => acc + (p.rebuys_count || 0), 0);
+  const addOnsCount = list.filter(p => p.has_add_on).length;
+  const rakeTotal = buyInsCount * (t.rake_amount || 0);
+  const prizePool =
+    (buyInsCount * (t.buy_in_amount - (t.rake_amount || 0))) +
+    (rebuysCount * t.rebuy_amount) +
+    (addOnsCount * t.add_on_amount);
+  const payouts = (t.payout_structure || []).map(pct => Math.round((prizePool * pct) / 100));
+  return { prizePool, payouts, buyInsCount, rebuysCount, addOnsCount, rakeTotal };
+};
