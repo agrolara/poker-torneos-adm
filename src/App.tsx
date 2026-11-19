@@ -66,7 +66,6 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="app-layout" style={styles.appLayout}>
-      <div className="app-watermark"></div>
       <Header currentView={view} onNavigate={handleNavigate} />
       
       <main style={styles.mainContent}>
