@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Header } from './components/Header';
 import { Landing } from './views/Landing';
@@ -8,7 +8,6 @@ import { Structures } from './views/Structures';
 import { Championships } from './views/Championships';
 import { TournamentSetup } from './views/TournamentSetup';
 import { TournamentControl } from './views/TournamentControl';
-import { TVDisplay } from './views/TVDisplay';
 import type { Tournament } from './types';
 import { isConfigured } from './supabaseClient';
 
@@ -17,18 +16,6 @@ const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
   const [view, setView] = useState<string>('dashboard');
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
-  const [isTVMode, setIsTVMode] = useState(false);
-
-  useEffect(() => {
-    // Check if the URL has ?tv=true to open display mode directly
-    if (window.location.search.includes('tv=true')) {
-      setIsTVMode(true);
-    }
-  }, []);
-
-  if (isTVMode) {
-    return <TVDisplay />;
-  }
 
   // If Supabase is not configured, show a helpful setup screen
   if (!isConfigured) {
